@@ -207,8 +207,7 @@ def create_slide_video(image_path, audio_path, script_text, output_video):
     emojis_to_show = extract_emojis(script_text)
     
     if emojis_to_show:
-        # Sử dụng drawtext để vẽ emoji cỡ cực đại (size=140) ở trung tâm màn hình dọc
-        # Lưu ý: FFmpeg cần font hỗ trợ Emoji (mặc định Windows/Linux sẽ tự tìm font fallback, hoặc sử dụng Arial/Segoe UI Emoji)
+        # Sử dụng drawtext để vẽ emoji cỡ lớn (size=150) ở trung tâm màn hình dọc
         vf_chain = (
             f"scale=1080:1920:force_original_aspect_ratio=decrease,"
             f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
@@ -230,19 +229,42 @@ def create_slide_video(image_path, audio_path, script_text, output_video):
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 def download_bgm(youtube_url, out_path):
-    """Tải nhạc nền từ link YouTube bằng yt-dlp"""
+    """Tải nhạc nền từ link YouTube bằng yt-dlp một cách an toàn, hạn chế lỗi giải mã"""
     try:
-        # Lệnh tải audio tốt nhất và lưu về định dạng mp3/m4a
+        # Tải tệp âm thanh gốc tốt nhất mà không bắt yt-dlp tự convert để tránh lỗi thiếu ffmpeg trong yt-dlp
         cmd = [
-            "yt-dlp", "-f", "ba",
-            "-x", "--audio-format", "mp3",
-            "-o", out_path,
+            "yt-dlp", 
+            "-f", "ba", 
+            "-o", out_path + ".%(ext)s", 
             youtube_url
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        # yt-dlp tự động thêm extension .mp3, ta kiểm tra và đổi tên chính xác
-        if os.path.exists(out_path + ".mp3"):
-            os.rename(out_path + ".mp3", out_path)
+        
+        # Tìm tệp âm thanh vừa tải về trong thư mục tạm
+        downloaded_file = None
+        base_dir = os.path.dirname(out_path)
+        base_name = os.path.basename(out_path)
+        for file in os.listdir(base_dir):
+            if file.startswith(base_name) and file != base_name:
+                downloaded_file = os.path.join(base_dir, file)
+                break
+                
+        if not downloaded_file:
+            return False
+            
+        # Dùng trực tiếp ffmpeg hệ thống để đồng bộ tệp tải về thành định dạng .mp3 tiêu chuẩn
+        ffmpeg_conv = [
+            "ffmpeg", "-y",
+            "-i", downloaded_file,
+            "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+            out_path
+        ]
+        subprocess.run(ffmpeg_conv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        
+        # Xóa file thô ban đầu để dọn dẹp bộ nhớ tạm
+        if os.path.exists(downloaded_file) and downloaded_file != out_path:
+            os.remove(downloaded_file)
+            
         return True
     except Exception as e:
         st.warning(f"Không thể tải nhạc nền từ YouTube: {e}. Tiến hành dựng video không nhạc nền.")
