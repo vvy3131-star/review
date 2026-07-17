@@ -11,3 +11,4 @@ opencv-python-headless
 Pillow
 numpy
 anthropic
+yt-dlp
