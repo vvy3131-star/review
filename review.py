@@ -25,7 +25,7 @@ st.write("Nhập link sản phẩm hoặc tự upload hình ảnh để tạo vi
 if "saved_gemini_api_key" not in st.session_state:
     st.session_state["saved_gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
 
-# --- CẤU HÌNH AI & NHẠC NỀN (SIDEBAR) ---
+# --- CẤU HÌNH AI (SIDEBAR) ---
 with st.sidebar:
     st.header("⚙️ Cấu hình AI viết kịch bản")
     
@@ -47,13 +47,6 @@ with st.sidebar:
         help="gemini-2.5-flash: Cực kỳ nhanh, phản hồi tức thì và tiết kiệm chi phí. gemini-2.5-pro: Dành cho kịch bản có tính sáng tạo cao hơn."
     )
     num_script_lines = st.slider("Số câu thoại trong kịch bản:", min_value=3, max_value=7, value=5)
-
-    st.header("🎵 Cấu hình Nhạc nền")
-    bgm_url = st.text_input(
-        "Link nhạc nền YouTube (Tùy chọn):",
-        placeholder="https://www.youtube.com/watch?v=...",
-        help="Nhập link video nhạc không bản quyền lofi/vlog để ghép làm nhạc nền nhẹ nhàng cho video."
-    )
 
 # --- CÁC HÀM XỬ LÝ PHỤ TRỢ ---
 
@@ -202,27 +195,6 @@ def create_slide_video(image_path, audio_path, script_text, output_video):
     
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-def download_bgm(youtube_url, out_path):
-    """Tải nhạc nền trực tiếp từ link YouTube và convert thẳng sang định dạng MP3 đích"""
-    try:
-        # Sử dụng yt-dlp để trích xuất âm thanh (-x) và tự động convert sang mp3 ngay lập tức
-        cmd = [
-            "yt-dlp", 
-            "-x", 
-            "--audio-format", "mp3", 
-            "-o", out_path, 
-            youtube_url
-        ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        
-        # Kiểm tra sự tồn tại của file sau khi yt-dlp thực hiện tải và convert
-        if os.path.exists(out_path):
-            return True
-        return False
-    except Exception as e:
-        st.warning(f"Không thể tải nhạc nền từ YouTube: {e}. Tiến hành dựng video không nhạc nền.")
-        return False
-
 # --- THIẾT LẬP GIAO DIỆN CHÍNH ---
 
 tab1, tab2 = st.tabs(["🔗 Sử dụng Link sản phẩm", "📤 Nhập thủ công (Khuyên dùng)"])
@@ -327,13 +299,6 @@ if product_title:
         progress_bar = st.progress(0)
         
         try:
-            # Tải nhạc nền nếu có cấu hình
-            has_bgm = False
-            local_bgm_path = os.path.join(tmp_dir, "bgm.mp3")
-            if bgm_url:
-                progress_text.write("⏳ Đang tải nhạc nền cực chill từ YouTube...")
-                has_bgm = download_bgm(bgm_url, local_bgm_path)
-
             progress_text.write("⏳ Bước 1: Đang khởi tạo giọng đọc AI thuyết minh...")
             for idx, text in enumerate(edited_scripts):
                 img_path = local_images_paths[idx % len(local_images_paths)]
@@ -358,36 +323,12 @@ if product_title:
                 for clip in video_clips:
                     f.write(f"file '{clip.replace('\\', '/')}'\n")
             
-            temp_output_path = os.path.join(tmp_dir, "review_raw_concat.mp4")
+            output_video_path = os.path.join(tmp_dir, "review_final_output.mp4")
             concat_cmd = [
                 "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                "-i", concat_list_path, "-c", "copy", temp_output_path
+                "-i", concat_list_path, "-c", "copy", output_video_path
             ]
             subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            
-            progress_bar.progress(70)
-
-            output_video_path = os.path.join(tmp_dir, "review_final_output.mp4")
-
-            # Ghép nhạc nền vào nếu tải thành công
-            if has_bgm:
-                progress_text.write("⏳ Bước 3: Đang hòa âm nhạc nền siêu nhỏ (8% volume) vào video thuyết minh...")
-                
-                # Sử dụng bộ lọc amix để trộn: Giữ nguyên âm lượng thuyết minh (1.0) và giảm nhạc nền (0.08)
-                # amix với duration=first sẽ tự động cắt file nhạc nền theo độ dài của file thuyết minh chính
-                mix_audio_cmd = [
-                    "ffmpeg", "-y",
-                    "-i", temp_output_path,
-                    "-i", local_bgm_path,
-                    "-filter_complex", "[0:a]volume=1.0[speech];[1:a]volume=0.08[music];[speech][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
-                    "-map", "0:v", "-map", "[aout]",
-                    "-c:v", "copy", "-c:a", "aac", "-shortest",
-                    output_video_path
-                ]
-                subprocess.run(mix_audio_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            else:
-                # Nếu không có nhạc nền, chỉ sao chép trực tiếp kết quả ghép slide
-                os.rename(temp_output_path, output_video_path)
             
             progress_bar.progress(100)
             progress_text.write("🎉 **Chúc mừng! Dựng video thành công.**")
