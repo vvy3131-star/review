@@ -168,8 +168,8 @@ async def text_to_speech(text, out_path):
     communicate = edge_tts.Communicate(clean_text, voice="vi-VN-HoaiMyNeural", rate="+3%")
     await communicate.save(out_path)
 
-def create_slide_video(image_path, audio_path, script_text, output_video):
-    """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio."""
+def create_slide_video(image_path, audio_path, script_text, title, output_video):
+    """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio kèm theo Layout Frame Tiêu đề & Logo chuẩn chỉnh"""
     probe_cmd = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_path
@@ -180,14 +180,34 @@ def create_slide_video(image_path, audio_path, script_text, output_video):
     aud_clean = audio_path.replace("\\", "/")
     out_clean = output_video.replace("\\", "/")
     
-    # Scale ảnh và pad nền đen theo tỷ lệ dọc 1080x1920 (Không còn thêm vẽ emoji đè lên video)
-    vf_chain = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+    # Định dạng lại chuỗi văn bản an toàn cho ffmpeg (xóa các ký tự gây lỗi compile bộ lọc)
+    safe_title = title.replace(":", "\\:").replace("'", "").replace('"', '')
+    safe_script = script_text.replace(":", "\\:").replace("'", "").replace('"', '')
+
+    # Đường dẫn font hệ thống mặc định (Có thể đổi sang Arial.ttf hoặc NotoSans nếu chạy local)
+    font_path = "C\\\\:/Windows/Fonts/Arial.ttf" if os.name == 'nt' else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+    # --- ĐOẠN MÃ NÂNG CẤP BỘ LỌC FFMPEG TẠO KHUNG ĐẸP MẮT ---
+    # 1. Scale hình ảnh về vừa khung hình vuông ở giữa video đứng 1080x1920
+    # 2. Tạo phần khung Header trắng hồng ở trên, vẽ 2 thanh line màu hồng đậm
+    # 3. Điền chữ "SỬA RỬA MẶT QUỐC DÂN" (Dòng 1 tiêu đề cố định) và "PHÙ HỢP MỌI LOẠI DA" (Dòng 2 màu hồng)
+    # 4. Phần Footer dưới: Vẽ vòng tròn giả làm Avatar và text tên thương hiệu "Bim Beauty 🌷"
+    vf_filter = (
+        f"scale=1080:1200:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
+        f"drawbox=y=0:w=1080:h=400:color=#FFF5F5:t=fill," # Nền Header hồng nhạt
+        f"drawbox=y=130:w=1080:h=8:color=#D96B78:t=fill," # Vạch viền Header trên
+        f"drawbox=y=392:w=1080:h=8:color=#D96B78:t=fill," # Vạch viền Header dưới
+        f"drawtext=fontfile='{font_path}':text='SỬA RỬA MẶT QUỐC DÂN':fontcolor=black:fontsize=52:x=(w-tw)/2:y=200:box=1:boxcolor=#FFF5F5,"
+        f"drawtext=fontfile='{font_path}':text='PHÙ HỢP MỌI LOẠI DA':fontcolor=#D96B78:fontsize=46:x=(w-tw)/2:y=290:box=1:boxcolor=#FFF5F5,"
+        f"drawbox=y=1750:w=1080:h=170:color=#EAEAEA@0.8:t=fill," # Thanh mờ Footer dưới
+        f"drawtext=fontfile='{font_path}':text='Bim Beauty \\xF0\\x9F\\x8C\\xB7':fontcolor=white:fontsize=55:x=260:y=1800" # Tên kênh & Icon hoa tulip
+    )
     
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", img_clean,
         "-i", aud_clean,
-        "-vf", vf_chain,
+        "-vf", vf_filter,
         "-c:v", "libx264", "-preset", "ultrafast", "-t", str(duration), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest",
         out_clean
@@ -311,8 +331,8 @@ if product_title:
                     loop = asyncio.get_event_loop()
                     loop.run_until_complete(text_to_speech(text, audio_path))
                 
-                # Gọi hàm dựng video slide sạch, không chứa văn bản đè
-                create_slide_video(img_path, audio_path, text, clip_path)
+                # Gọi hàm dựng video tích hợp frame hình ảnh mới nâng cấp
+                create_slide_video(img_path, audio_path, text, product_title, clip_path)
                 video_clips.append(clip_path)
                 
             progress_bar.progress(40)
