@@ -45,10 +45,12 @@ def get_system_font():
     return None
 
 def scrape_product_info(url):
-    """Cào thông tin cơ bản của sản phẩm từ URL với Headers giả lập trình duyệt"""
+    """Cào thông tin cơ bản của sản phẩm từ URL với Headers giả lập trình duyệt (Hỗ trợ TikTok Shop)"""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Cache-Control": "max-age=0"
     }
     try:
         response = requests.get(url, headers=headers, timeout=10)
@@ -57,27 +59,44 @@ def scrape_product_info(url):
         
         soup = BeautifulSoup(response.content, "html.parser")
         
-        # Thử lấy tiêu đề sản phẩm từ các thẻ thông dụng
-        title_tag = soup.find("h1") or soup.find("title")
-        title = title_tag.text.strip() if title_tag else "Sản phẩm review"
-        # Làm sạch tiêu đề
+        # Chiến lược lấy tiêu đề tối ưu (Đặc biệt hiệu quả với thẻ meta chia sẻ của TikTok Shop)
+        title = "Sản phẩm review"
+        og_title = soup.find("meta", property="og:title") or soup.find("meta", name="twitter:title")
+        
+        if og_title and og_title.get("content"):
+            title = og_title["content"].strip()
+        else:
+            title_tag = soup.find("h1") or soup.find("title")
+            if title_tag:
+                title = title_tag.text.strip()
+                
+        # Làm sạch tiêu đề khỏi các ký tự xuống dòng
         title = title.replace("\n", "").replace("\r", "").strip()
         
-        # Tìm các link hình ảnh (.jpg, .png) xuất hiện trong trang
+        # Tìm các link hình ảnh (.jpg, .png, .webp) xuất hiện trong trang
         images = []
+        
+        # Ưu tiên lấy ảnh chất lượng cao từ thẻ meta trước (TikTok Shop thường chứa ảnh đẹp ở đây)
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            img_url = og_image["content"]
+            if img_url.startswith("http"):
+                images.append(img_url)
+
+        # Cào tiếp các thẻ img thông thường nếu chưa đủ 5 ảnh
         for img in soup.find_all("img"):
-            src = img.get("src") or img.get("data-src") or img.get("key")
+            src = img.get("src") or img.get("data-src") or img.get("key") or img.get("file")
             if src and (src.startswith("http://") or src.startswith("https://")):
                 if any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
-                    # Loại bỏ các icon nhỏ, chỉ giữ ảnh sản phẩm tương đối lớn
-                    if "icon" not in src.lower() and "logo" not in src.lower():
+                    # Loại bỏ các thành phần giao diện nhỏ lẻ (icon, logo)
+                    if "icon" not in src.lower() and "logo" not in src.lower() and src not in images:
                         images.append(src)
                         if len(images) >= 5:  # Lấy tối đa 5 ảnh để làm slide
                             break
                         
         return {"title": title, "images": images}
     except Exception as e:
-        st.warning(f"Không thể tự động cào do cơ chế bảo mật của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
+        st.warning(f"Không thể tự động cào do cơ chế bảo mật nghiêm ngặt của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
         return None
 
 def download_images(image_urls, tmp_dir):
@@ -168,18 +187,18 @@ tab1, tab2 = st.tabs(["🔗 Sử dụng Link sản phẩm", "📤 Nhập thủ c
 product_title = ""
 product_images = []
 
-# TAB 1: CÀO TỰ ĐỘNG
+# TAB 1: CÀO TỰ ĐỘNG (HỖ TRỢ THÊM TIKTOK SHOP)
 with tab1:
-    product_url = st.text_input("Dán link sản phẩm tại đây:", placeholder="https://shopee.vn/...")
+    product_url = st.text_input("Dán link sản phẩm tại đây (Shopee, TikTok Shop, Tiki, Lazada...):", placeholder="https://v.tiktok.com/... hoặc https://shopee.vn/...")
     if product_url:
         with st.spinner("🕵️ Đang phân tích dữ liệu trang web..."):
             data = scrape_product_info(product_url)
-            if data and data["images"]:
+            if data and (data["images"] or data["title"] != "Sản phẩm review"):
                 product_title = data["title"]
                 product_images = data["images"]
-                st.success("Cào thông tin thành công! Hãy cuộn xuống dưới để thiết lập kịch bản.")
+                st.success("Nhận diện thông tin thành công! Hãy kiểm tra kịch bản phía dưới.")
             else:
-                st.error("Không thể tự động tải ảnh từ link này. Hãy chuyển sang tab 'Nhập thủ công' để tạo dễ dàng!")
+                st.error("Không thể tự động tải dữ liệu từ link này do lớp bảo mật. Hãy chuyển sang tab 'Nhập thủ công' để tạo video ngay nhé!")
 
 # TAB 2: NHẬP THỦ CÔNG 
 with tab2:
@@ -192,35 +211,36 @@ with tab2:
         product_images = uploaded_files
 
 # --- PHẦN XỬ LÝ DỰNG VIDEO CHUNG ---
-if product_title and product_images:
+if product_title and (product_images or tab1):
     st.write("---")
-    st.subheader("📸 Xem trước hình ảnh sản phẩm:")
+    st.subheader("📸 Cấu hình hình ảnh sản phẩm:")
     
     # Tạo thư mục tạm để quản lý file ảnh tải lên/cào về
     tmp_dir = tempfile.mkdtemp(prefix="prod_review_")
     local_images_paths = []
 
-    cols = st.columns(min(len(product_images), 5))
-    for idx, img_obj in enumerate(product_images[:5]):
-        cols[idx].image(img_obj, use_container_width=True)
-        
-        # Lưu file ảnh vào bộ nhớ tạm để ffmpeg xử lý
-        temp_img_path = os.path.join(tmp_dir, f"img_{idx}.jpg")
-        if isinstance(img_obj, str):
-            # Nếu là link ảnh (từ Tab 1), tải về máy
-            try:
-                res = requests.get(img_obj, timeout=5)
-                if res.status_code == 200:
-                    with open(temp_img_path, "wb") as f:
-                        f.write(res.content)
-                    local_images_paths.append(temp_img_path)
-            except:
-                continue
-        else:
-            # Nếu là file upload (từ Tab 2), lưu trực tiếp dữ liệu bytes
-            with open(temp_img_path, "wb") as f:
-                f.write(img_obj.getbuffer())
-            local_images_paths.append(temp_img_path)
+    if product_images:
+        cols = st.columns(min(len(product_images), 5))
+        for idx, img_obj in enumerate(product_images[:5]):
+            cols[idx].image(img_obj, use_container_width=True)
+            
+            # Lưu file ảnh vào bộ nhớ tạm để ffmpeg xử lý
+            temp_img_path = os.path.join(tmp_dir, f"img_{idx}.jpg")
+            if isinstance(img_obj, str):
+                # Nếu là link ảnh (từ Tab 1), tải về máy
+                try:
+                    res = requests.get(img_obj, timeout=5)
+                    if res.status_code == 200:
+                        with open(temp_img_path, "wb") as f:
+                            f.write(res.content)
+                        local_images_paths.append(temp_img_path)
+                except:
+                    continue
+            else:
+                # Nếu là file upload (từ Tab 2), lưu trực tiếp dữ liệu bytes
+                with open(temp_img_path, "wb") as f:
+                    f.write(img_obj.getbuffer())
+                local_images_paths.append(temp_img_path)
 
     # Sinh kịch bản mẫu dựa trên tên sản phẩm
     st.write("---")
@@ -237,7 +257,7 @@ if product_title and product_images:
     # Nút bấm bắt đầu dựng video chính
     if st.button("🎬 Bắt đầu dựng và xuất video ngay", use_container_width=True):
         if not local_images_paths:
-            st.error("Lỗi: Không tìm thấy ảnh sản phẩm hợp lệ nào để dựng video.")
+            st.error("Lỗi: Không tìm thấy ảnh sản phẩm hợp lệ nào để dựng video. Hãy thêm ảnh ở tab Nhập thủ công nếu link cào bị chặn ảnh.")
             st.stop()
             
         video_clips = []
