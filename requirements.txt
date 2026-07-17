@@ -1,4 +1,6 @@
-
+beautifulsoup4
+requests
+edge-tts
 streamlit
 ffmpeg-python
 imageio-ffmpeg
