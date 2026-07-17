@@ -116,23 +116,24 @@ def scrape_product_info(url):
                         
         return {"title": title, "images": images}
     except Exception as e:
-        st.warning(f"Không thể tự động cào do cơ chế bảo mật nghiêm ngặt của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
+        st.warning("Không thể tự động cào do cơ chế bảo mật nghiêm ngặt của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
         return None
 
 def generate_review_script(title):
-    """Tạo kịch bản review mẫu ngắn gọn kèm emoji sinh động (dự phòng khi không dùng AI hoặc AI lỗi)"""
-    clean_title = title[:50] + "..." if len(title) > 50 else title
-    script_steps = [
-        f"🔥 Chào các bạn! Hôm nay mình sẽ review nhanh siêu phẩm {clean_title} này nhé.",
-        "✨ Ấn tượng đầu tiên là thiết kế vô cùng sang xịn mịn và cực kỳ bắt mắt luôn đó.",
-        "💎 Trải nghiệm thực tế sử dụng cho hiệu năng vô cùng ổn định và mượt mà ngoài mong đợi.",
-        "🤑 Trong tầm giá này thì đây chắc chắn là một sự lựa chọn cực kỳ hời cho các bạn.",
-        "🛒 Chi tiết thông tin sản phẩm mình để ở phần mô tả, nhanh tay bấm vào giỏ hàng sở hữu ngay nha!"
-    ]
-    return script_steps
+    """Tạo kịch bản review mẫu khoảng 200 từ bằng ngôn từ marketing cuốn hút (dự phòng)"""
+    clean_title = title[:60] + "..." if len(title) > 60 else title
+    script_text = (
+        f"🔥 Bạn đang tìm kiếm một giải pháp đột phá cho cuộc sống? Siêu phẩm {clean_title} chính là câu trả lời hoàn hảo dành cho bạn! "
+        "✨ Ấn tượng đầu tiên chắc chắn là thiết kế vô cùng sang xịn mịn, tinh tế đến từng đường nét mang lại cảm giác cực kỳ đẳng cấp khi sở hữu. "
+        "💎 Trải nghiệm thực tế sử dụng mới thực sự là điểm đắt giá: hiệu năng hoạt động vô cùng mạnh mẽ, hoạt động cực kỳ mượt mà, bền bỉ ngoài mong đợi và đáp ứng hoàn hảo mọi nhu cầu của bạn. "
+        "😱 Điểm cộng cực lớn là tính ứng dụng cao, cực kỳ tiện lợi giúp bạn tiết kiệm thời gian và nâng tầm phong cách sống mỗi ngày. "
+        "🤑 Trong tầm giá siêu tốt như thế này, đây chắc chắn là một món hời lớn mà bạn tuyệt đối không nên bỏ lỡ. "
+        "🛒 Số lượng ưu đãi có hạn, nhanh tay bấm ngay vào giỏ hàng phía dưới để sở hữu siêu phẩm này với mức giá cực kỳ ưu đãi ngay hôm nay nhé!"
+    )
+    return script_text
 
 def generate_review_script_ai(title, api_key, model="gemini-2.5-flash"):
-    """Dùng Google Gemini API để viết kịch bản thuyết minh video review hấp dẫn CÓ CHỨA EMOJI, thỏa sức sáng tạo không giới hạn dòng"""
+    """Dùng Google Gemini API để viết bài thuyết minh marketing dài khoảng 200 chữ cực kỳ thuyết phục"""
     if not api_key:
         st.warning("⚠️ Chưa nhập Gemini API Key ở thanh bên trái, đang dùng kịch bản mẫu có sẵn.")
         return generate_review_script(title)
@@ -146,19 +147,17 @@ def generate_review_script_ai(title, api_key, model="gemini-2.5-flash"):
     try:
         client = genai.Client(api_key=api_key)
 
-        prompt = f"""Bạn là một chuyên gia sáng tạo nội dung, reviewer và chiến thần livestream bán hàng TikTok Shop / Shopee cực kỳ cuốn hút, có tài giữ chân người xem và chốt đơn thần tốc.
-
-Hãy thỏa sức sáng tạo viết một kịch bản review video ngắn (dạng dọc, TikTok/Shorts/Reels) cho sản phẩm sau:
+        prompt = f"""Bạn là một giám đốc marketing kiêm chiến thần chốt đơn nội dung video ngắn (TikTok/Shorts/Reels) vô cùng chuyên nghiệp.
+Hãy viết một bài thuyết minh video review sản phẩm với độ dài khoảng 200 từ dành cho sản phẩm sau:
 "{title}"
 
 YÊU CẦU BẮT BUỘC:
-1. Bạn không bị giới hạn số lượng câu hay độ dài. Hãy tự thiết kế số lượng phân đoạn hợp lý nhất để truyền tải trọn vẹn điểm bán hàng độc nhất (USP) của sản phẩm. Mỗi phân đoạn viết trên MỘT dòng riêng biệt, không đánh số, không dùng ký tự markdown hay gạch đầu dòng.
-2. Ngôn từ cực kỳ bùng nổ, đánh trúng tâm lý, tạo sự tò mò ngay từ 3 giây đầu tiên (Hook cực mạnh).
-3. Chèn các EMOJI sinh động, trendy (ví dụ: 🔥, ✨, 😍, 🛒, 💯, 🤫, 😱) xuyên suốt kịch bản để thu hút mắt người xem.
-4. Nêu bật chi tiết các ưu điểm, công dụng, chất liệu, trải nghiệm thực tế vượt trội của sản phẩm này so với thị trường. Làm cho khách hàng cảm thấy "Không mua ngay là tiếc hùi hụi".
-5. Kết thúc bằng một lời kêu gọi hành động (CTA) cực kỳ kích thích chốt đơn, tạo sự khẩn trương (ví dụ: số lượng có hạn, ưu đãi chỉ có trong hôm nay).
-6. Mỗi dòng kịch bản dài vừa phải (khoảng 15-25 từ), nhịp điệu tự nhiên, dễ đọc thành lời để lồng giọng đọc AI (text-to-speech) mượt mà.
-7. CHỈ trả về các dòng kịch bản trực tiếp, TUYỆT ĐỐI không kèm lời dẫn, không ghi tiêu đề, không giải thích dài dòng."""
+1. Viết thành một đoạn văn/bài viết hoàn chỉnh, thống nhất trong một khung văn bản duy nhất (khoảng 200 chữ), không chia thành nhiều dòng hay phân đoạn 1, phân đoạn 2 riêng biệt.
+2. Ngôn từ cuốn hút, chuyên nghiệp của một marketer thực thụ, nêu bật những ưu điểm vượt trội, công dụng, thiết kế và lợi ích thực tế của sản phẩm mang lại để thuyết phục khách hàng mua ngay lập tức.
+3. Chèn các EMOJI sinh động, trendy (ví dụ: 🔥, ✨, 😍, 🛒, 💯) một cách tự nhiên để thu hút người nghe.
+4. Có phần mở đầu kích thích (Hook cực mạnh trong 3 giây đầu), phần thân bài nêu bật giá trị cốt lõi, và phần kết thúc thúc giục hành động mua hàng (CTA) tạo sự khẩn trương.
+5. Giữ nhịp điệu đọc tự nhiên, dễ đọc thành lời mượt mà, không dùng ký tự markdown nguy hiểm hay gạch đầu dòng.
+6. CHỈ trả về duy nhất nội dung bài viết, không kèm lời dẫn của AI hay bất kỳ thông tin thừa nào khác."""
 
         response = client.models.generate_content(
             model=model,
@@ -166,12 +165,10 @@ YÊU CẦU BẮT BUỘC:
         )
 
         raw_text = response.text.strip()
-        lines = [l.strip(" -•\t") for l in raw_text.split("\n") if l.strip()]
-
-        if len(lines) == 0:
+        if not raw_text:
             raise ValueError("AI không trả về nội dung hợp lệ.")
 
-        return lines
+        return raw_text
 
     except Exception as e:
         st.warning(f"⚠️ Không thể tạo kịch bản bằng AI ({e}). Đang dùng kịch bản mẫu có sẵn.")
@@ -211,7 +208,7 @@ def create_slide_video(image_path, audio_path, script_text, title, output_video)
         title_line2 = ""
 
     # Đường dẫn font hệ thống mặc định phù hợp cho cả Windows và Linux
-    font_path = "C\\\\:/Windows/Fonts/Arial.ttf" if os.name == 'nt' else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_path = "C\\:/Windows/Fonts/Arial.ttf" if os.name == 'nt' else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
     # --- BỘ LỌC FFMPEG TẠO KHUNG ĐỒNG BỘ MÀU HỒNG ---
     vf_filter = (
@@ -299,36 +296,34 @@ if product_title:
                         f.write(img_obj.getbuffer())
                     local_images_paths.append(temp_img_path)
 
-    st.subheader("📝 Kịch bản thuyết minh (Có thể sửa lại theo ý bạn):")
+    st.subheader("📝 Bài kịch bản thuyết minh Marketing (Có thể sửa lại theo ý bạn):")
 
     col_ai1, col_ai2 = st.columns([3, 1])
     with col_ai1:
         use_ai_script = st.checkbox(
-            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (không giới hạn câu thoại, tự do sáng tạo)",
+            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (Bài viết 200 từ)",
             value=True,
             key="use_ai_checkbox"
         )
     with col_ai2:
         regenerate_ai = st.button("🔄 Viết lại bằng AI", key="regen_ai_btn", use_container_width=True)
 
-    ai_cache_key = f"ai_script_v2::{product_title}::{ai_model}"
+    ai_cache_key = f"ai_script_v2_fulltext::{product_title}::{ai_model}"
 
     if use_ai_script:
         if ai_cache_key not in st.session_state or regenerate_ai:
-            with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng hấp dẫn..."):
+            with st.spinner("🤖 AI đang đóng vai nhân viên Marketing viết bài thuyết phục khách hàng mua..."):
                 st.session_state[ai_cache_key] = generate_review_script_ai(
                     product_title,
                     api_key=st.session_state["saved_gemini_api_key"],
                     model=ai_model
                 )
-        scripts = st.session_state[ai_cache_key]
+        script_text = st.session_state[ai_cache_key]
     else:
-        scripts = generate_review_script(product_title)
+        script_text = generate_review_script(product_title)
 
-    edited_scripts = []
-    for idx, step in enumerate(scripts):
-        edited_txt = st.text_input(f"Phân đoạn thoại {idx + 1}:", value=step, key=f"script_input_{idx}_{ai_cache_key}")
-        edited_scripts.append(edited_txt)
+    # Đưa toàn bộ bài viết vào 1 khung văn bản lớn để chỉnh sửa dễ dàng
+    edited_script = st.text_area("Nội dung thuyết minh (Khoảng 200 từ):", value=script_text, height=220, key=f"script_text_area_{ai_cache_key}")
 
     st.write("---")
     
@@ -337,29 +332,56 @@ if product_title:
             st.error("Lỗi: Không tìm thấy hoặc không thể tải bất kỳ hình ảnh sản phẩm hợp lệ nào để dựng video. Vui lòng chuyển sang tab 'Nhập thủ công' và tải trực tiếp file ảnh từ máy của bạn lên nhé!")
             st.stop()
             
-        video_clips = []
         progress_text = st.empty()
         progress_bar = st.progress(0)
         
         try:
             progress_text.write("⏳ Bước 1: Đang khởi tạo giọng đọc AI thuyết minh...")
-            for idx, text in enumerate(edited_scripts):
-                img_path = local_images_paths[idx % len(local_images_paths)]
-                audio_path = os.path.join(tmp_dir, f"audio_{idx}.mp3")
-                clip_path = os.path.join(tmp_dir, f"clip_{idx}.mp4")
-                
-                try:
-                    asyncio.run(text_to_speech(text, audio_path))
-                except RuntimeError:
-                    loop = asyncio.get_event_loop()
-                    loop.run_until_complete(text_to_speech(text, audio_path))
-                
-                create_slide_video(img_path, audio_path, text, product_title, clip_path)
-                video_clips.append(clip_path)
-                
-            progress_bar.progress(40)
+            audio_path = os.path.join(tmp_dir, "audio_full.mp3")
             
-            progress_text.write("⏳ Bước 2: Đang ghép nối các phân đoạn slide thành video dọc...")
+            # Chuyển đổi toàn bộ văn bản 200 chữ thành 1 file âm thanh duy nhất
+            try:
+                asyncio.run(text_to_speech(edited_script, audio_path))
+            except RuntimeError:
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(text_to_speech(edited_script, audio_path))
+                
+            progress_bar.progress(30)
+            
+            progress_text.write("⏳ Bước 2: Đang phân tích thời lượng và dựng các slide ảnh...")
+            
+            # Đo thời lượng của audio lớn bằng ffprobe
+            probe_cmd = [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+            ]
+            total_duration = float(subprocess.check_output(probe_cmd).strip())
+            
+            num_images = len(local_images_paths)
+            duration_per_image = total_duration / num_images
+            
+            video_clips = []
+            
+            # Tạo các phân đoạn video cho từng ảnh với thời lượng được chia đều tương ứng
+            for idx, img_path in enumerate(local_images_paths):
+                clip_audio_path = os.path.join(tmp_dir, f"clip_audio_{idx}.mp3")
+                clip_video_path = os.path.join(tmp_dir, f"clip_{idx}.mp4")
+                
+                # Cắt nhỏ file audio lớn tương ứng với phân đoạn của ảnh đó
+                start_time = idx * duration_per_image
+                cut_audio_cmd = [
+                    "ffmpeg", "-y", "-ss", str(start_time), "-t", str(duration_per_image),
+                    "-i", audio_path, "-acodec", "copy", clip_audio_path
+                ]
+                subprocess.run(cut_audio_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                
+                # Tạo video slide với phân đoạn audio đã cắt
+                create_slide_video(img_path, clip_audio_path, "", product_title, clip_video_path)
+                video_clips.append(clip_video_path)
+            
+            progress_bar.progress(70)
+            
+            progress_text.write("⏳ Bước 3: Đang ghép nối các phân đoạn slide thành video dọc hoàn chỉnh...")
             concat_list_path = os.path.join(tmp_dir, "concat_list.txt")
             with open(concat_list_path, "w", encoding="utf-8") as f:
                 for clip in video_clips:
@@ -368,7 +390,7 @@ if product_title:
             output_video_path = os.path.join(tmp_dir, "review_final_output.mp4")
             concat_cmd = [
                 "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                "-i", concat_list_path, "-c", "copy", output_video_path
+                "-i", concat_list_path, "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", output_video_path
             ]
             subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             
