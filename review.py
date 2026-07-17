@@ -189,7 +189,7 @@ product_images = []
 
 # TAB 1: CÀO TỰ ĐỘNG (HỖ TRỢ THÊM TIKTOK SHOP)
 with tab1:
-    product_url = st.text_input("Dán link sản phẩm tại đây (Shopee, TikTok Shop, Tiki, Lazada...):", placeholder="https://v.tiktok.com/... hoặc https://shopee.vn/...")
+    product_url = st.text_input("Dán link sản phẩm tại đây (Shopee, TikTok Shop, Tiki, Lazada...):", placeholder="https://v.tiktok.com/... hoặc https://shopee.vn/...", key="url_input")
     if product_url:
         with st.spinner("🕵️ Đang phân tích dữ liệu trang web..."):
             data = scrape_product_info(product_url)
@@ -202,60 +202,62 @@ with tab1:
 
 # TAB 2: NHẬP THỦ CÔNG 
 with tab2:
-    manual_title = st.text_input("Tên sản phẩm muốn review:", value="Loa Bluetooth Siêu Trầm Mini")
-    uploaded_files = st.file_uploader("Tải lên hình ảnh sản phẩm (Từ 1 đến 5 ảnh):", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+    manual_title = st.text_input("Tên sản phẩm muốn review:", value="Loa Bluetooth Siêu Trầm Mini", key="manual_title_input")
+    uploaded_files = st.file_uploader("Tải lên hình ảnh sản phẩm (Từ 1 đến 5 ảnh):", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="file_uploader_input")
     
-    if manual_title:
+    # Chỉ gán giá trị thủ công nếu người dùng thực sự đang thao tác ở tab này
+    if manual_title and not product_title:
         product_title = manual_title
     if uploaded_files:
         product_images = uploaded_files
 
-# --- PHẦN XỬ LÝ DỰNG VIDEO CHUNG ---
-if product_title and (product_images or tab1):
+# --- PHẦN XỬ LÝ DỰNG VIDEO CHUNG (Đã tối ưu tránh lỗi DOM) ---
+if product_title:
     st.write("---")
-    st.subheader("📸 Cấu hình hình ảnh sản phẩm:")
     
-    # Tạo thư mục tạm để quản lý file ảnh tải lên/cào về
+    # Sử dụng container cố định để render ảnh, tránh lỗi React removeChild
+    image_container = st.container()
+    
+    # Tạo thư mục tạm để quản lý file ảnh
     tmp_dir = tempfile.mkdtemp(prefix="prod_review_")
     local_images_paths = []
 
     if product_images:
-        cols = st.columns(min(len(product_images), 5))
-        for idx, img_obj in enumerate(product_images[:5]):
-            cols[idx].image(img_obj, use_container_width=True)
-            
-            # Lưu file ảnh vào bộ nhớ tạm để ffmpeg xử lý
-            temp_img_path = os.path.join(tmp_dir, f"img_{idx}.jpg")
-            if isinstance(img_obj, str):
-                # Nếu là link ảnh (từ Tab 1), tải về máy
-                try:
-                    res = requests.get(img_obj, timeout=5)
-                    if res.status_code == 200:
-                        with open(temp_img_path, "wb") as f:
-                            f.write(res.content)
-                        local_images_paths.append(temp_img_path)
-                except:
-                    continue
-            else:
-                # Nếu là file upload (từ Tab 2), lưu trực tiếp dữ liệu bytes
-                with open(temp_img_path, "wb") as f:
-                    f.write(img_obj.getbuffer())
-                local_images_paths.append(temp_img_path)
+        with image_container:
+            st.subheader("📸 Cấu hình hình ảnh sản phẩm:")
+            cols = st.columns(min(len(product_images), 5))
+            for idx, img_obj in enumerate(product_images[:5]):
+                cols[idx].image(img_obj, use_container_width=True)
+                
+                # Lưu file ảnh vào bộ nhớ tạm để ffmpeg xử lý
+                temp_img_path = os.path.join(tmp_dir, f"img_{idx}.jpg")
+                if isinstance(img_obj, str):
+                    try:
+                        res = requests.get(img_obj, timeout=5)
+                        if res.status_code == 200:
+                            with open(temp_img_path, "wb") as f:
+                                f.write(res.content)
+                            local_images_paths.append(temp_img_path)
+                    except:
+                        continue
+                else:
+                    with open(temp_img_path, "wb") as f:
+                        f.write(img_obj.getbuffer())
+                    local_images_paths.append(temp_img_path)
 
     # Sinh kịch bản mẫu dựa trên tên sản phẩm
-    st.write("---")
     st.subheader("📝 Kịch bản thuyết minh (Có thể sửa lại theo ý bạn):")
     scripts = generate_review_script(product_title)
     edited_scripts = []
     
     for idx, step in enumerate(scripts):
-        edited_txt = st.text_input(f"Câu thoại {idx + 1}:", value=step)
+        edited_txt = st.text_input(f"Câu thoại {idx + 1}:", value=step, key=f"script_input_{idx}")
         edited_scripts.append(edited_txt)
 
     st.write("---")
     
     # Nút bấm bắt đầu dựng video chính
-    if st.button("🎬 Bắt đầu dựng và xuất video ngay", use_container_width=True):
+    if st.button("🎬 Bắt đầu dựng và xuất video ngay", use_container_width=True, key="submit_btn"):
         if not local_images_paths:
             st.error("Lỗi: Không tìm thấy ảnh sản phẩm hợp lệ nào để dựng video. Hãy thêm ảnh ở tab Nhập thủ công nếu link cào bị chặn ảnh.")
             st.stop()
@@ -276,7 +278,6 @@ if product_title and (product_images or tab1):
                 try:
                     asyncio.run(text_to_speech(text, audio_path))
                 except RuntimeError:
-                    # Hỗ trợ chạy ổn định nếu event loop đã hoạt động sẵn
                     loop = asyncio.get_event_loop()
                     loop.run_until_complete(text_to_speech(text, audio_path))
                 
@@ -312,7 +313,8 @@ if product_title and (product_images or tab1):
                     label="📥 Tải video review về máy",
                     data=f,
                     file_name="video_review_san_pham.mp4",
-                    mime="video/mp4"
+                    mime="video/mp4",
+                    key="download_btn"
                 )
                 
         except Exception as e:
