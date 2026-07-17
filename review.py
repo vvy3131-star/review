@@ -159,6 +159,7 @@ YÊU CẦU BẮT BUỘC:
 5. Giữ nhịp điệu đọc tự nhiên, dễ đọc thành lời mượt mà, không dùng ký tự markdown nguy hiểm hay gạch đầu dòng.
 6. CHỈ trả về duy nhất nội dung bài viết, không kèm lời dẫn của AI hay bất kỳ thông tin thừa nào khác."""
 
+        st.session_state["saved_gemini_api_key"] = api_key
         response = client.models.generate_content(
             model=model,
             contents=prompt,
@@ -175,11 +176,20 @@ YÊU CẦU BẮT BUỘC:
         return generate_review_script(title)
 
 async def text_to_speech(text, out_path):
-    """Tạo giọng đọc AI thuyết minh bằng edge-tts"""
+    """Tạo giọng đọc AI thuyết minh bằng edge-tts với cấu hình ngắt nghỉ tự nhiên, mượt mà tối đa"""
     import edge_tts
-    # Loại bỏ emoji trước khi chuyển sang giọng nói để tránh lỗi phát âm ký tự lạ
-    clean_text = "".join(c for c in text if c.isalnum() or c.isspace() or c in ".,!?-_:")
-    communicate = edge_tts.Communicate(clean_text, voice="vi-VN-HoaiMyNeural", rate="+3%")
+    
+    # 1. Loại bỏ các emoji và ký tự lạ không đọc được để tránh phát âm vấp
+    clean_text = "".join(c for c in text if c.isalnum() or c.isspace() or c in ".,!?-_:;")
+    
+    # 2. Loại bỏ khoảng trắng thừa và chuẩn hóa khoảng cách xung quanh dấu câu để hỗ trợ nhịp điệu ngắt hơi tự nhiên
+    clean_text = re.sub(r'\s+', ' ', clean_text)
+    clean_text = re.sub(r'\s*([.,!?\-:])\s*', r'\1 ', clean_text)
+    clean_text = clean_text.strip()
+    
+    # 3. Sử dụng giọng nữ truyền cảm 'vi-VN-HoaiMyNeural'
+    # Tốc độ +5% mang lại cảm giác hoạt bát, tự tin và lưu loát đặc trưng của video review ngắn (Shorts/TikTok)
+    communicate = edge_tts.Communicate(clean_text, voice="vi-VN-HoaiMyNeural", rate="+5%", pitch="+0Hz")
     await communicate.save(out_path)
 
 def create_slide_video(image_path, audio_path, script_text, title, output_video):
