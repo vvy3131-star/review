@@ -175,24 +175,8 @@ async def text_to_speech(text, out_path):
     communicate = edge_tts.Communicate(clean_text, voice="vi-VN-HoaiMyNeural", rate="+3%")
     await communicate.save(out_path)
 
-def extract_emojis(text):
-    """Bóc tách tất cả các emoji xuất hiện trong văn bản kịch bản"""
-    # Regex tìm các ký tự thuộc nhóm Unicode Emoji
-    emoji_pattern = re.compile("["
-        "\U0001f600-\U0001f64f|"  # emoticons
-        "\U0001f300-\U0001f5ff|"  # symbols & pictographs
-        "\U0001f680-\U0001f6ff|"  # transport & map symbols
-        "\U0001f1e0-\U0001f1ff|"  # flags
-        "\u2700-\u27bf|"          # dingbats
-        "\u2600-\u26ff|"          # miscellaneous symbols
-        "\U0001f900-\U0001f9ff|"  # Supplemental Symbols and Pictographs
-        "\U0001fa70-\U0001faff"   # Symbols and Pictographs Extended-A
-    "]+", flags=re.UNICODE)
-    emojis = emoji_pattern.findall(text)
-    return "".join(emojis) if emojis else ""
-
 def create_slide_video(image_path, audio_path, script_text, output_video):
-    """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio. Thêm emoji to chính giữa thay vì chữ"""
+    """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio."""
     probe_cmd = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_path
@@ -203,18 +187,8 @@ def create_slide_video(image_path, audio_path, script_text, output_video):
     aud_clean = audio_path.replace("\\", "/")
     out_clean = output_video.replace("\\", "/")
     
-    # Trích xuất Emoji để vẽ trực tiếp đè lên video
-    emojis_to_show = extract_emojis(script_text)
-    
-    if emojis_to_show:
-        # Sử dụng drawtext để vẽ emoji cỡ lớn (size=150) ở trung tâm màn hình dọc
-        vf_chain = (
-            f"scale=1080:1920:force_original_aspect_ratio=decrease,"
-            f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
-            f"drawtext=text='{emojis_to_show}':x=(w-text_w)/2:y=(h-text_h)/2:fontsize=150:fontcolor=white"
-        )
-    else:
-        vf_chain = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+    # Scale ảnh và pad nền đen theo tỷ lệ dọc 1080x1920 (Không còn thêm vẽ emoji đè lên video)
+    vf_chain = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
     
     cmd = [
         "ffmpeg", "-y",
@@ -229,43 +203,22 @@ def create_slide_video(image_path, audio_path, script_text, output_video):
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 def download_bgm(youtube_url, out_path):
-    """Tải nhạc nền từ link YouTube bằng yt-dlp một cách an toàn, hạn chế lỗi giải mã"""
+    """Tải nhạc nền trực tiếp từ link YouTube và convert thẳng sang định dạng MP3 đích"""
     try:
-        # Tải tệp âm thanh gốc tốt nhất mà không bắt yt-dlp tự convert để tránh lỗi thiếu ffmpeg trong yt-dlp
+        # Sử dụng yt-dlp để trích xuất âm thanh (-x) và tự động convert sang mp3 ngay lập tức
         cmd = [
             "yt-dlp", 
-            "-f", "ba", 
-            "-o", out_path + ".%(ext)s", 
+            "-x", 
+            "--audio-format", "mp3", 
+            "-o", out_path, 
             youtube_url
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
-        # Tìm tệp âm thanh vừa tải về trong thư mục tạm
-        downloaded_file = None
-        base_dir = os.path.dirname(out_path)
-        base_name = os.path.basename(out_path)
-        for file in os.listdir(base_dir):
-            if file.startswith(base_name) and file != base_name:
-                downloaded_file = os.path.join(base_dir, file)
-                break
-                
-        if not downloaded_file:
-            return False
-            
-        # Dùng trực tiếp ffmpeg hệ thống để đồng bộ tệp tải về thành định dạng .mp3 tiêu chuẩn
-        ffmpeg_conv = [
-            "ffmpeg", "-y",
-            "-i", downloaded_file,
-            "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-            out_path
-        ]
-        subprocess.run(ffmpeg_conv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        
-        # Xóa file thô ban đầu để dọn dẹp bộ nhớ tạm
-        if os.path.exists(downloaded_file) and downloaded_file != out_path:
-            os.remove(downloaded_file)
-            
-        return True
+        # Kiểm tra sự tồn tại của file sau khi yt-dlp thực hiện tải và convert
+        if os.path.exists(out_path):
+            return True
+        return False
     except Exception as e:
         st.warning(f"Không thể tải nhạc nền từ YouTube: {e}. Tiến hành dựng video không nhạc nền.")
         return False
@@ -381,7 +334,7 @@ if product_title:
                 progress_text.write("⏳ Đang tải nhạc nền cực chill từ YouTube...")
                 has_bgm = download_bgm(bgm_url, local_bgm_path)
 
-            progress_text.write("⏳ Bước 1: Đang khởi tạo giọng đọc AI thuyết minh & chèn Emoji vào giữa khung hình...")
+            progress_text.write("⏳ Bước 1: Đang khởi tạo giọng đọc AI thuyết minh...")
             for idx, text in enumerate(edited_scripts):
                 img_path = local_images_paths[idx % len(local_images_paths)]
                 audio_path = os.path.join(tmp_dir, f"audio_{idx}.mp3")
@@ -393,7 +346,7 @@ if product_title:
                     loop = asyncio.get_event_loop()
                     loop.run_until_complete(text_to_speech(text, audio_path))
                 
-                # Gọi hàm dựng video tích hợp bóc tách Emoji hiển thị trực tiếp lên slide
+                # Gọi hàm dựng video slide sạch, không chứa văn bản đè
                 create_slide_video(img_path, audio_path, text, clip_path)
                 video_clips.append(clip_path)
                 
@@ -419,18 +372,13 @@ if product_title:
             # Ghép nhạc nền vào nếu tải thành công
             if has_bgm:
                 progress_text.write("⏳ Bước 3: Đang hòa âm nhạc nền siêu nhỏ (8% volume) vào video thuyết minh...")
-                # Lấy độ dài của video thuyết minh để cắt nhạc nền cho khớp
-                probe_len_cmd = [
-                    "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1", temp_output_path
-                ]
-                video_duration = float(subprocess.check_output(probe_len_cmd).strip())
-
+                
                 # Sử dụng bộ lọc amix để trộn: Giữ nguyên âm lượng thuyết minh (1.0) và giảm nhạc nền (0.08)
+                # amix với duration=first sẽ tự động cắt file nhạc nền theo độ dài của file thuyết minh chính
                 mix_audio_cmd = [
                     "ffmpeg", "-y",
                     "-i", temp_output_path,
-                    "-ss", "00:00:00", "-to", str(video_duration), "-i", local_bgm_path,
+                    "-i", local_bgm_path,
                     "-filter_complex", "[0:a]volume=1.0[speech];[1:a]volume=0.08[music];[speech][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
                     "-map", "0:v", "-map", "[aout]",
                     "-c:v", "copy", "-c:a", "aac", "-shortest",
