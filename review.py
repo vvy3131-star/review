@@ -20,6 +20,24 @@ st.markdown("""
 st.title("🛍️ Tạo Video Review Sản Phẩm Tự Động")
 st.write("Nhập link sản phẩm hoặc tự upload hình ảnh để tạo video review ngắn (dạng dọc 16:9 TikTok/Shorts) kèm giọng thuyết minh AI cực chất.")
 
+# --- CẤU HÌNH AI (SIDEBAR) ---
+with st.sidebar:
+    st.header("⚙️ Cấu hình AI viết kịch bản")
+    anthropic_api_key = st.text_input(
+        "Anthropic API Key (Claude):",
+        type="password",
+        value=os.environ.get("ANTHROPIC_API_KEY", ""),
+        help="Lấy API Key miễn phí dùng thử tại https://console.anthropic.com/settings/keys. "
+             "Dùng để AI tự viết kịch bản bán hàng siêu thuyết phục thay vì mẫu có sẵn."
+    )
+    ai_model = st.selectbox(
+        "Model AI:",
+        options=["claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-opus-4-8"],
+        index=0,
+        help="Sonnet 5: cân bằng chất lượng/tốc độ. Haiku: nhanh, rẻ. Opus: chất lượng cao nhất."
+    )
+    num_script_lines = st.slider("Số câu thoại trong kịch bản:", min_value=3, max_value=7, value=5)
+
 # --- CÁC HÀM XỬ LÝ PHỤ TRỢ ---
 
 def get_system_font():
@@ -95,8 +113,8 @@ def scrape_product_info(url):
         st.warning(f"Không thể tự động cào do cơ chế bảo mật nghiêm ngặt của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
         return None
 
-def generate_review_script(title):
-    """Tạo kịch bản review mẫu ngắn gọn"""
+def generate_review_script(title, num_lines=5):
+    """Tạo kịch bản review mẫu ngắn gọn (dự phòng khi không dùng AI hoặc AI lỗi)"""
     clean_title = title[:50] + "..." if len(title) > 50 else title
     script_steps = [
         f"Chào các bạn! Hôm nay mình sẽ review nhanh sản phẩm {clean_title}.",
@@ -105,7 +123,66 @@ def generate_review_script(title):
         "Trong tầm giá này thì đây chắc chắn là một sự lựa chọn cực kỳ hời cho các bạn.",
         "Chi tiết thông tin sản phẩm mình để ở phần mô tả, nhanh tay sở hữu ngay nhé!"
     ]
-    return script_steps
+    return script_steps[:num_lines] if num_lines <= len(script_steps) else script_steps
+
+def generate_review_script_ai(title, api_key, model="claude-sonnet-5", num_lines=5):
+    """
+    Dùng AI (Claude) để viết kịch bản thuyết minh video review CỰC KỲ THUYẾT PHỤC,
+    theo phong cách người bán hàng chuyên nghiệp: chỉ rõ ưu điểm cụ thể của sản phẩm,
+    tạo cảm giác hấp dẫn/khan hiếm và chốt đơn mạnh mẽ.
+    Trả về danh sách các câu thoại (list[str]). Nếu lỗi -> fallback về kịch bản mẫu.
+    """
+    if not api_key:
+        st.warning("⚠️ Chưa nhập Anthropic API Key ở thanh bên trái, đang dùng kịch bản mẫu có sẵn.")
+        return generate_review_script(title, num_lines)
+
+    try:
+        import anthropic
+    except ImportError:
+        st.warning("⚠️ Chưa cài thư viện `anthropic` (chạy: pip install anthropic). Đang dùng kịch bản mẫu có sẵn.")
+        return generate_review_script(title, num_lines)
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+
+        prompt = f"""Bạn là một chuyên gia bán hàng livestream TikTok Shop / Shopee cực kỳ có duyên, giàu kinh nghiệm chốt đơn.
+
+Hãy viết kịch bản thuyết minh cho video review ngắn (dạng dọc, TikTok/Shorts) cho sản phẩm sau:
+"{title}"
+
+YÊU CẦU BẮT BUỘC:
+1. Viết đúng {num_lines} câu thoại, mỗi câu MỘT dòng riêng biệt, không đánh số, không markdown, không emoji.
+2. Câu 1: chào hỏi + giới thiệu sản phẩm sao cho gây chú ý ngay lập tức, đúng chất mở đầu video bán hàng.
+3. Các câu ở giữa: PHẢI nêu rõ ít nhất 2-3 ƯU ĐIỂM/TÍNH NĂNG CỤ THỂ của sản phẩm (suy luận hợp lý dựa trên tên và loại sản phẩm, ví dụ: chất liệu, công dụng, độ bền, tiện lợi, hiệu quả, thiết kế, công nghệ...). TUYỆT ĐỐI không nói chung chung kiểu "chất lượng tốt", "rất đẹp" mà không giải thích vì sao — phải gắn với LỢI ÍCH thực tế người dùng nhận được.
+4. Văn phong: nhiệt huyết, gần gũi, tự nhiên như đang nói trực tiếp với khách xem livestream, có thể dùng cách so sánh để làm nổi bật "hời" (so với giá, so với sản phẩm cùng loại).
+5. Câu cuối: lời kêu gọi hành động (CTA) mạnh mẽ, tạo cảm giác cấp bách/khan hiếm hợp lý để thúc đẩy chốt đơn ngay (không nói dối, không cam kết sai sự thật).
+6. Mỗi câu dài khoảng 15-25 từ, dễ đọc thành lời, phù hợp để lồng giọng đọc AI (text-to-speech).
+7. CHỈ trả về đúng {num_lines} dòng kịch bản, KHÔNG thêm lời dẫn, giải thích, tiêu đề hay bất kỳ nội dung nào khác."""
+
+        message = client.messages.create(
+            model=model,
+            max_tokens=700,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        raw_text = "".join(
+            block.text for block in message.content if getattr(block, "type", "") == "text"
+        ).strip()
+
+        lines = [l.strip(" -•\t") for l in raw_text.split("\n") if l.strip()]
+
+        if len(lines) == 0:
+            raise ValueError("AI không trả về nội dung hợp lệ.")
+
+        # Đảm bảo đúng số dòng yêu cầu (cắt bớt nếu dư, giữ nguyên nếu thiếu)
+        if len(lines) > num_lines:
+            lines = lines[:num_lines]
+
+        return lines
+
+    except Exception as e:
+        st.warning(f"⚠️ Không thể tạo kịch bản bằng AI ({e}). Đang dùng kịch bản mẫu có sẵn.")
+        return generate_review_script(title, num_lines)
 
 async def text_to_speech(text, out_path):
     """Tạo giọng đọc AI thuyết minh bằng edge-tts"""
@@ -223,11 +300,35 @@ if product_title:
                     local_images_paths.append(temp_img_path)
 
     st.subheader("📝 Kịch bản thuyết minh (Có thể sửa lại theo ý bạn):")
-    scripts = generate_review_script(product_title)
+
+    col_ai1, col_ai2 = st.columns([3, 1])
+    with col_ai1:
+        use_ai_script = st.checkbox(
+            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (nêu rõ ưu điểm sản phẩm)",
+            value=True,
+            key="use_ai_checkbox"
+        )
+    with col_ai2:
+        regenerate_ai = st.button("🔄 Viết lại bằng AI", key="regen_ai_btn", use_container_width=True)
+
+    ai_cache_key = f"ai_script::{product_title}::{num_script_lines}::{ai_model}"
+
+    if use_ai_script:
+        if ai_cache_key not in st.session_state or regenerate_ai:
+            with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng siêu thuyết phục..."):
+                st.session_state[ai_cache_key] = generate_review_script_ai(
+                    product_title,
+                    api_key=anthropic_api_key,
+                    model=ai_model,
+                    num_lines=num_script_lines
+                )
+        scripts = st.session_state[ai_cache_key]
+    else:
+        scripts = generate_review_script(product_title, num_script_lines)
+
     edited_scripts = []
-    
     for idx, step in enumerate(scripts):
-        edited_txt = st.text_input(f"Câu thoại {idx + 1}:", value=step, key=f"script_input_{idx}")
+        edited_txt = st.text_input(f"Câu thoại {idx + 1}:", value=step, key=f"script_input_{idx}_{ai_cache_key}")
         edited_scripts.append(edited_txt)
 
     st.write("---")
