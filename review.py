@@ -4,28 +4,51 @@ import asyncio
 import tempfile
 import requests
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageFont
 import subprocess
+import sys
 
 st.set_page_config(page_title="Tạo Video Review Sản Phẩm Tự Động", page_icon="🛍️", layout="centered")
 
-# CSS giao diện
+# CSS giao diện đẹp mắt
 st.markdown("""
 <style>
     .block-container {padding-top: 2rem; max-width: 800px;}
-    div.stButton > button {width: 100%; background-color: #FF4B4B; color: white; font-weight: bold;}
+    div.stButton > button {width: 100%; background-color: #FF4B4B; color: white; font-weight: bold; height: 3rem;}
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🛍️ Tạo Video Review Sản Phẩm Tự Động")
-st.write("Dán link sản phẩm (Shopee, Tiki, Lazada, Amazon...) để tự động cào ảnh, tạo giọng đọc thuyết minh và dựng thành video review.")
+st.write("Nhập link sản phẩm hoặc tự upload hình ảnh để tạo video review ngắn (dạng dọc 16:9 TikTok/Shorts) kèm giọng thuyết minh AI cực chất.")
 
-# --- CÁC HÀM XỬ LÝ PHỤ TRỢ (BACKGROUND FUNCTIONS) ---
+# --- CÁC HÀM XỬ LÝ PHỤ TRỢ ---
+
+def get_system_font():
+    """Tìm font chữ phù hợp hỗ trợ tiếng Việt trên cả Windows và Linux"""
+    if sys.platform.startswith("win"):
+        paths = [
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/tahoma.ttf",
+            "C:/Windows/Fonts/calibri.ttf"
+        ]
+    else:
+        # Đường dẫn phổ biến trên Linux (Streamlit Cloud)
+        paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+        ]
+    
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    return None
 
 def scrape_product_info(url):
-    """Cào thông tin cơ bản của sản phẩm từ URL"""
+    """Cào thông tin cơ bản của sản phẩm từ URL với Headers giả lập trình duyệt"""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7"
     }
     try:
         response = requests.get(url, headers=headers, timeout=10)
@@ -34,23 +57,27 @@ def scrape_product_info(url):
         
         soup = BeautifulSoup(response.content, "html.parser")
         
-        # Thử lấy tiêu đề sản phẩm
-        title_tag = soup.find("title") or soup.find("h1")
-        title = title_tag.text.strip() if title_tag else "Sản phẩm chất lượng cao"
+        # Thử lấy tiêu đề sản phẩm từ các thẻ thông dụng
+        title_tag = soup.find("h1") or soup.find("title")
+        title = title_tag.text.strip() if title_tag else "Sản phẩm review"
+        # Làm sạch tiêu đề
+        title = title.replace("\n", "").replace("\r", "").strip()
         
         # Tìm các link hình ảnh (.jpg, .png) xuất hiện trong trang
         images = []
         for img in soup.find_all("img"):
-            src = img.get("src") or img.get("data-src")
+            src = img.get("src") or img.get("data-src") or img.get("key")
             if src and (src.startswith("http://") or src.startswith("https://")):
-                if any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png"]):
-                    images.append(src)
-                    if len(images) >= 5:  # Lấy tối đa 5 ảnh để làm slide
-                        break
+                if any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    # Loại bỏ các icon nhỏ, chỉ giữ ảnh sản phẩm tương đối lớn
+                    if "icon" not in src.lower() and "logo" not in src.lower():
+                        images.append(src)
+                        if len(images) >= 5:  # Lấy tối đa 5 ảnh để làm slide
+                            break
                         
         return {"title": title, "images": images}
     except Exception as e:
-        st.error(f"Lỗi khi cào link sản phẩm: {e}")
+        st.warning(f"Không thể tự động cào do cơ chế bảo mật của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
         return None
 
 def download_images(image_urls, tmp_dir):
@@ -69,26 +96,25 @@ def download_images(image_urls, tmp_dir):
     return local_paths
 
 def generate_review_script(title):
-    """Tạo kịch bản review ngắn dựa trên tên sản phẩm"""
-    # Bạn có thể kết nối API Gemini/GPT tại đây để viết kịch bản hay hơn.
-    # Bản mẫu dưới đây tự động điền tên sản phẩm vào form chuẩn:
+    """Tạo kịch bản review mẫu ngắn gọn"""
+    clean_title = title[:50] + "..." if len(title) > 50 else title
     script_steps = [
-        f"Chào các bạn! Hôm nay mình sẽ review nhanh sản phẩm {title[:60]}...",
-        "Điểm cộng đầu tiên là thiết kế vô cùng hiện đại, trẻ trung và bắt mắt.",
-        "Trải nghiệm thực tế cho thấy sản phẩm cực kỳ bền bỉ và đáng tiền.",
-        "Nếu bạn đang tìm kiếm một giải pháp tối ưu thì đây chính là lựa chọn hoàn hảo.",
-        "Bấm ngay vào link bên dưới để mua hàng với giá ưu đãi tốt nhất hôm nay nhé!"
+        f"Chào các bạn! Hôm nay mình sẽ review nhanh sản phẩm {clean_title}.",
+        "Ấn tượng đầu tiên là thiết kế vô cùng sang xịn mịn và cực kỳ bắt mắt.",
+        "Trải nghiệm thực tế sử dụng cho hiệu năng vô cùng ổn định và mượt mà.",
+        "Trong tầm giá này thì đây chắc chắn là một sự lựa chọn cực kỳ hời cho các bạn.",
+        "Chi tiết thông tin sản phẩm mình để ở phần mô tả, nhanh tay sở hữu ngay nhé!"
     ]
     return script_steps
 
 async def text_to_speech(text, out_path):
     """Tạo giọng đọc AI thuyết minh bằng edge-tts"""
     import edge_tts
-    # Sử dụng giọng đọc chuẩn tiếng Việt của Microsoft Hoài My
-    communicate = edge_tts.Communicate(text, voice="vi-VN-HoaiMyNeural", rate="+0%")
+    # Sử dụng Hoài My (vi-VN-HoaiMyNeural) giọng đọc truyền cảm cực hợp làm review
+    communicate = edge_tts.Communicate(text, voice="vi-VN-HoaiMyNeural", rate="+3%")
     await communicate.save(out_path)
 
-def create_slide_video(image_path, audio_path, output_video, text, font_size=24):
+def create_slide_video(image_path, audio_path, output_video, text, font_size=32):
     """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio + chữ đè lên"""
     # Lấy thời lượng chính xác của file audio thuyết minh
     probe_cmd = [
@@ -97,22 +123,38 @@ def create_slide_video(image_path, audio_path, output_video, text, font_size=24)
     ]
     duration = float(subprocess.check_output(probe_cmd).strip())
     
-    # Định dạng bộ lọc để vẽ chữ (drawtext) đè lên hình ảnh
-    # Chia nhỏ text thành các dòng ngắn nếu quá dài
-    wrapped_text = "\n".join([text[i:i+35] for i in range(0, len(text), 35)])
+    # Định dạng lại văn bản để không bị tràn màn hình video dọc
+    wrapped_text = ""
+    words = text.split()
+    temp_line = ""
+    for word in words:
+        if len(temp_line + " " + word) < 28:
+            temp_line += " " + word if temp_line else word
+        else:
+            wrapped_text += temp_line + "\n"
+            temp_line = word
+    wrapped_text += temp_line
     
-    # Chuyển đổi đường dẫn cho tương thích trên Windows/Linux
+    # Xử lý font chữ và dấu gạch chéo đường dẫn trên Windows
+    font_path = get_system_font()
     img_clean = image_path.replace("\\", "/")
     aud_clean = audio_path.replace("\\", "/")
     out_clean = output_video.replace("\\", "/")
     
-    # Render video từ ảnh tĩnh có thời lượng khớp với tiếng nói, chèn sub vào chính giữa dưới
+    # Xây dựng filter vẽ chữ (Drawtext filter)
+    drawtext_filter = f"drawtext=text='{wrapped_text}':fontcolor=white:fontsize={font_size}:box=1:boxcolor=black@0.6:boxborderw=15:x=(w-text_w)/2:y=h-350"
+    if font_path:
+        # Nếu tìm thấy font hệ thống, thêm vào để tránh lỗi hiển thị tiếng Việt
+        font_clean = font_path.replace("\\", "/").replace(":", "\\:")
+        drawtext_filter = f"drawtext=fontfile='{font_clean}':" + drawtext_filter
+
+    # Render video từ ảnh tĩnh khớp với thời lượng tiếng, chuyển khung hình về 1080x1920 (9:16 dọc)
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", img_clean,
         "-i", aud_clean,
-        "-vf", f"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,drawtext=text='{wrapped_text}':fontcolor=white:fontsize={font_size}:box=1:boxcolor=black@0.6:boxborderw=10:x=(w-text_w)/2:y=h-250",
-        "-c:v", "libx264", "-t", str(duration), "-pix_fmt", "yuv420p",
+        "-vf", f"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,{drawtext_filter}",
+        "-c:v", "libx264", "-preset", "ultrafast", "-t", str(duration), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest",
         out_clean
     ]
@@ -121,89 +163,137 @@ def create_slide_video(image_path, audio_path, output_video, text, font_size=24)
 
 # --- THIẾT LẬP GIAO DIỆN CHÍNH ---
 
-product_url = st.text_input("🔗 Nhập link sản phẩm của bạn:", placeholder="https://shopee.vn/ten-san-pham...")
+tab1, tab2 = st.tabs(["🔗 Sử dụng Link sản phẩm", "📤 Nhập thủ công (Khuyên dùng)"])
 
-if product_url:
-    with st.spinner("🕵️ Đang cào dữ liệu và phân tích sản phẩm..."):
-        data = scrape_product_info(product_url)
+product_title = ""
+product_images = []
+
+# TAB 1: CÀO TỰ ĐỘNG
+with tab1:
+    product_url = st.text_input("Dán link sản phẩm tại đây:", placeholder="https://shopee.vn/...")
+    if product_url:
+        with st.spinner("🕵️ Đang phân tích dữ liệu trang web..."):
+            data = scrape_product_info(product_url)
+            if data and data["images"]:
+                product_title = data["title"]
+                product_images = data["images"]
+                st.success("Cào thông tin thành công! Hãy cuộn xuống dưới để thiết lập kịch bản.")
+            else:
+                st.error("Không thể tự động tải ảnh từ link này. Hãy chuyển sang tab 'Nhập thủ công' để tạo dễ dàng!")
+
+# TAB 2: NHẬP THỦ CÔNG 
+with tab2:
+    manual_title = st.text_input("Tên sản phẩm muốn review:", value="Loa Bluetooth Siêu Trầm Mini")
+    uploaded_files = st.file_uploader("Tải lên hình ảnh sản phẩm (Từ 1 đến 5 ảnh):", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+    
+    if manual_title:
+        product_title = manual_title
+    if uploaded_files:
+        product_images = uploaded_files
+
+# --- PHẦN XỬ LÝ DỰNG VIDEO CHUNG ---
+if product_title and product_images:
+    st.write("---")
+    st.subheader("📸 Xem trước hình ảnh sản phẩm:")
+    
+    # Tạo thư mục tạm để quản lý file ảnh tải lên/cào về
+    tmp_dir = tempfile.mkdtemp(prefix="prod_review_")
+    local_images_paths = []
+
+    cols = st.columns(min(len(product_images), 5))
+    for idx, img_obj in enumerate(product_images[:5]):
+        cols[idx].image(img_obj, use_container_width=True)
         
-    if data and data["images"]:
-        st.success(f"Tìm thấy sản phẩm: **{data['title']}**")
-        st.write(f"Tìm thấy {len(data['images'])} hình ảnh hợp lệ.")
-        
-        # Hiển thị ảnh mẫu
-        cols = st.columns(len(data["images"]))
-        for idx, img_url in enumerate(data["images"]):
-            cols[idx].image(img_url, use_container_width=True)
-            
-        # Cho phép chỉnh sửa lại kịch bản review nếu muốn
-        st.subheader("📝 Kịch bản Review (Bạn có thể tự sửa lại từng câu):")
-        scripts = generate_review_script(data["title"])
-        edited_scripts = []
-        for idx, step in enumerate(scripts):
-            edited_txt = st.text_input(f"Đoạn {idx + 1}:", value=step)
-            edited_scripts.append(edited_txt)
-            
-        # Nút dựng video
-        if st.button("🎬 Bắt đầu xuất video Review"):
-            tmp_dir = tempfile.mkdtemp(prefix="prod_review_")
-            video_clips = []
-            
-            progress_text = st.empty()
-            progress_bar = st.progress(0)
-            
+        # Lưu file ảnh vào bộ nhớ tạm để ffmpeg xử lý
+        temp_img_path = os.path.join(tmp_dir, f"img_{idx}.jpg")
+        if isinstance(img_obj, str):
+            # Nếu là link ảnh (từ Tab 1), tải về máy
             try:
-                # 1. Tải hình ảnh
-                progress_text.write("⏳ 1. Đang tải hình ảnh sản phẩm...")
-                local_imgs = download_images(data["images"], tmp_dir)
-                progress_bar.progress(20)
+                res = requests.get(img_obj, timeout=5)
+                if res.status_code == 200:
+                    with open(temp_img_path, "wb") as f:
+                        f.write(res.content)
+                    local_images_paths.append(temp_img_path)
+            except:
+                continue
+        else:
+            # Nếu là file upload (từ Tab 2), lưu trực tiếp dữ liệu bytes
+            with open(temp_img_path, "wb") as f:
+                f.write(img_obj.getbuffer())
+            local_images_paths.append(temp_img_path)
+
+    # Sinh kịch bản mẫu dựa trên tên sản phẩm
+    st.write("---")
+    st.subheader("📝 Kịch bản thuyết minh (Có thể sửa lại theo ý bạn):")
+    scripts = generate_review_script(product_title)
+    edited_scripts = []
+    
+    for idx, step in enumerate(scripts):
+        edited_txt = st.text_input(f"Câu thoại {idx + 1}:", value=step)
+        edited_scripts.append(edited_txt)
+
+    st.write("---")
+    
+    # Nút bấm bắt đầu dựng video chính
+    if st.button("🎬 Bắt đầu dựng và xuất video ngay", use_container_width=True):
+        if not local_images_paths:
+            st.error("Lỗi: Không tìm thấy ảnh sản phẩm hợp lệ nào để dựng video.")
+            st.stop()
+            
+        video_clips = []
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+        
+        try:
+            # Bước 1: Tạo tiếng & video cho từng phân đoạn
+            progress_text.write("⏳ Bước 1: Đang khởi tạo giọng đọc AI thuyết minh tiếng Việt...")
+            for idx, text in enumerate(edited_scripts):
+                img_path = local_images_paths[idx % len(local_images_paths)]
+                audio_path = os.path.join(tmp_dir, f"audio_{idx}.mp3")
+                clip_path = os.path.join(tmp_dir, f"clip_{idx}.mp4")
                 
-                if not local_imgs:
-                    st.error("Không tải được hình ảnh nào từ trang web.")
-                    st.stop()
-                
-                # 2. Tạo tiếng & dựng từng clip nhỏ (Slide)
-                progress_text.write("⏳ 2. Đang chuyển ngữ và tạo giọng thuyết minh AI...")
-                for idx, text in enumerate(edited_scripts):
-                    # Đảm bảo ảnh lặp lại tuần hoàn nếu kịch bản nhiều dòng hơn số ảnh
-                    img_path = local_imgs[idx % len(local_imgs)]
-                    audio_path = os.path.join(tmp_dir, f"audio_{idx}.mp3")
-                    clip_path = os.path.join(tmp_dir, f"clip_{idx}.mp4")
-                    
-                    # Tạo file giọng thuyết minh
+                # Tạo giọng nói bất đồng bộ
+                try:
                     asyncio.run(text_to_speech(text, audio_path))
-                    
-                    # Ghép thành video nhỏ
-                    create_slide_video(img_path, audio_path, clip_path, text)
-                    video_clips.append(clip_path)
-                    
-                progress_bar.progress(60)
+                except RuntimeError:
+                    # Hỗ trợ chạy ổn định nếu event loop đã hoạt động sẵn
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(text_to_speech(text, audio_path))
                 
-                # 3. Nối các phân cảnh thành video TikTok/Shorts hoàn chỉnh (Khung hình đứng 1080x1920)
-                progress_text.write("⏳ 3. Đang ghép nối các phân đoạn clip thành video hoàn chỉnh...")
-                concat_list_path = os.path.join(tmp_dir, "concat_list.txt")
-                with open(concat_list_path, "w") as f:
-                    for clip in video_clips:
-                        # Ffmpeg yêu cầu đường dẫn tuyệt đối với dấu gạch chéo xuôi
-                        f.write(f"file '{clip.replace('\\', '/')}'\n")
+                # Tạo slide clip
+                create_slide_video(img_path, audio_path, clip_path, text)
+                video_clips.append(clip_path)
                 
-                output_video_path = "review_product_output.mp4"
-                concat_cmd = [
-                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                    "-i", concat_list_path, "-c", "copy", output_video_path
-                ]
-                subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            progress_bar.progress(50)
+            
+            # Bước 2: Ghép các phân đoạn thành video hoàn chỉnh
+            progress_text.write("⏳ Bước 2: Đang ghép nối các phân đoạn slide thành video dọc...")
+            concat_list_path = os.path.join(tmp_dir, "concat_list.txt")
+            with open(concat_list_path, "w", encoding="utf-8") as f:
+                for clip in video_clips:
+                    f.write(f"file '{clip.replace('\\', '/')}'\n")
+            
+            output_video_path = os.path.join(tmp_dir, "review_final_output.mp4")
+            concat_cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", concat_list_path, "-c", "copy", output_video_path
+            ]
+            subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            
+            progress_bar.progress(100)
+            progress_text.write("🎉 **Chúc mừng! Dựng video thành công.**")
+            
+            # Hiển thị kết quả video trực quan
+            st.video(output_video_path)
+            
+            # Cho phép người dùng tải về máy
+            with open(output_video_path, "rb") as f:
+                st.download_button(
+                    label="📥 Tải video review về máy",
+                    data=f,
+                    file_name="video_review_san_pham.mp4",
+                    mime="video/mp4"
+                )
                 
-                progress_bar.progress(100)
-                progress_text.write("🎉 **Xuất video thành công!**")
-                
-                # Hiển thị video kết quả
-                st.video(output_video_path)
-                
-                with open(output_video_path, "rb") as f:
-                    st.download_button("📥 Tải video review về máy", f, file_name="review_san_pham.mp4", mime="video/mp4")
-                    
-            except Exception as e:
-                st.error(f"Đã xảy ra lỗi khi render video: {e}")
-    else:
-        st.warning("Không thể tự động cào thông tin hoặc hình ảnh từ liên kết này. Hãy thử sử dụng một liên kết sản phẩm khác nhé.")
+        except Exception as e:
+            st.error(f"Đã xảy ra lỗi trong quá trình xử lý video: {e}")
