@@ -20,16 +20,25 @@ st.markdown("""
 st.title("🛍️ Tạo Video Review Sản Phẩm Tự Động")
 st.write("Nhập link sản phẩm hoặc tự upload hình ảnh để tạo video review ngắn (dạng dọc 16:9 TikTok/Shorts) kèm giọng thuyết minh AI cực chất.")
 
+# Khởi tạo session_state cho API Key nếu chưa có
+if "saved_gemini_api_key" not in st.session_state:
+    st.session_state["saved_gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
+
 # --- CẤU HÌNH AI (SIDEBAR) ---
 with st.sidebar:
     st.header("⚙️ Cấu hình AI viết kịch bản")
+    
+    # Nhập và lưu API Key vào session_state
     gemini_api_key = st.text_input(
         "Gemini API Key:",
         type="password",
-        value=os.environ.get("GEMINI_API_KEY", ""),
+        value=st.session_state["saved_gemini_api_key"],
         help="Lấy API Key tại Google AI Studio (https://aistudio.google.com/). "
-             "Dùng để AI tự viết kịch bản bán hàng siêu thuyết phục thay vì mẫu có sẵn."
+             "Key sẽ được lưu tự động trong phiên làm việc này."
     )
+    if gemini_api_key != st.session_state["saved_gemini_api_key"]:
+        st.session_state["saved_gemini_api_key"] = gemini_api_key
+
     ai_model = st.selectbox(
         "Model AI:",
         options=["gemini-2.5-flash", "gemini-2.5-pro"],
@@ -39,28 +48,6 @@ with st.sidebar:
     num_script_lines = st.slider("Số câu thoại trong kịch bản:", min_value=3, max_value=7, value=5)
 
 # --- CÁC HÀM XỬ LÝ PHỤ TRỢ ---
-
-def get_system_font():
-    """Tìm font chữ phù hợp hỗ trợ tiếng Việt trên cả Windows và Linux"""
-    if sys.platform.startswith("win"):
-        paths = [
-            "C:/Windows/Fonts/arial.ttf",
-            "C:/Windows/Fonts/tahoma.ttf",
-            "C:/Windows/Fonts/calibri.ttf"
-        ]
-    else:
-        # Đường dẫn phổ biến trên Linux (Streamlit Cloud)
-        paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
-        ]
-    
-    for path in paths:
-        if os.path.exists(path):
-            return path
-    return None
 
 def scrape_product_info(url):
     """Cào thông tin cơ bản của sản phẩm từ URL với Headers giả lập trình duyệt (Hỗ trợ TikTok Shop)"""
@@ -77,7 +64,6 @@ def scrape_product_info(url):
         
         soup = BeautifulSoup(response.content, "html.parser")
         
-        # Chiến lược lấy tiêu đề tối ưu
         title = "Sản phẩm review"
         og_title = soup.find("meta", property="og:title") or soup.find("meta", name="twitter:title")
         
@@ -91,14 +77,12 @@ def scrape_product_info(url):
         title = title.replace("\n", "").replace("\r", "").strip()
         images = []
         
-        # Lấy ảnh từ thẻ Open Graph
         og_image = soup.find("meta", property="og:image")
         if og_image and og_image.get("content"):
             img_url = og_image["content"]
             if img_url.startswith("http"):
                 images.append(img_url)
 
-        # Cào tiếp thẻ img
         for img in soup.find_all("img"):
             src = img.get("src") or img.get("data-src") or img.get("key") or img.get("file")
             if src and (src.startswith("http://") or src.startswith("https://")):
@@ -114,22 +98,19 @@ def scrape_product_info(url):
         return None
 
 def generate_review_script(title, num_lines=5):
-    """Tạo kịch bản review mẫu ngắn gọn (dự phòng khi không dùng AI hoặc AI lỗi)"""
+    """Tạo kịch bản review mẫu ngắn gọn kèm emoji sinh động (dự phòng khi không dùng AI hoặc AI lỗi)"""
     clean_title = title[:50] + "..." if len(title) > 50 else title
     script_steps = [
-        f"Chào các bạn! Hôm nay mình sẽ review nhanh sản phẩm {clean_title}.",
-        "Ấn tượng đầu tiên là thiết kế vô cùng sang xịn mịn và cực kỳ bắt mắt.",
-        "Trải nghiệm thực tế sử dụng cho hiệu năng vô cùng ổn định và mượt mà.",
-        "Trong tầm giá này thì đây chắc chắn là một sự lựa chọn cực kỳ hời cho các bạn.",
-        "Chi tiết thông tin sản phẩm mình để ở phần mô tả, nhanh tay sở hữu ngay nhé!"
+        f"🔥 Chào các bạn! Hôm nay mình sẽ review nhanh siêu phẩm {clean_title} này nhé.",
+        "✨ Ấn tượng đầu tiên là thiết kế vô cùng sang xịn mịn và cực kỳ bắt mắt luôn đó.",
+        "💎 Trải nghiệm thực tế sử dụng cho hiệu năng vô cùng ổn định và mượt mà ngoài mong đợi.",
+        "🤑 Trong tầm giá này thì đây chắc chắn là một sự lựa chọn cực kỳ hời cho các bạn.",
+        "🛒 Chi tiết thông tin sản phẩm mình để ở phần mô tả, nhanh tay bấm vào giỏ hàng sở hữu ngay nha!"
     ]
     return script_steps[:num_lines] if num_lines <= len(script_steps) else script_steps
 
 def generate_review_script_ai(title, api_key, model="gemini-2.5-flash", num_lines=5):
-    """
-    Dùng Google Gemini API để viết kịch bản thuyết minh video review CỰC KỲ THUYẾT PHỤC.
-    Yêu cầu cài đặt thư viện mới nhất: pip install google-genai
-    """
+    """Dùng Google Gemini API để viết kịch bản thuyết minh video review hấp dẫn CÓ CHỨA EMOJI"""
     if not api_key:
         st.warning("⚠️ Chưa nhập Gemini API Key ở thanh bên trái, đang dùng kịch bản mẫu có sẵn.")
         return generate_review_script(title, num_lines)
@@ -141,7 +122,6 @@ def generate_review_script_ai(title, api_key, model="gemini-2.5-flash", num_line
         return generate_review_script(title, num_lines)
 
     try:
-        # Khởi tạo Client sử dụng thư viện SDK google-genai mới nhất
         client = genai.Client(api_key=api_key)
 
         prompt = f"""Bạn là một chuyên gia bán hàng livestream TikTok Shop / Shopee cực kỳ có duyên, giàu kinh nghiệm chốt đơn.
@@ -150,13 +130,14 @@ Hãy viết kịch bản thuyết minh cho video review ngắn (dạng dọc, Ti
 "{title}"
 
 YÊU CẦU BẮT BUỘC:
-1. Viết đúng {num_lines} câu thoại, mỗi câu MỘT dòng riêng biệt, không đánh số, không markdown, không emoji.
-2. Câu 1: chào hỏi + giới thiệu sản phẩm sao cho gây chú ý ngay lập tức, đúng chất mở đầu video bán hàng.
-3. Các câu ở giữa: PHẢI nêu rõ ít nhất 2-3 ƯU ĐIỂM/TÍNH NĂNG CỤ THỂ của sản phẩm (suy luận hợp lý dựa trên tên và loại sản phẩm, ví dụ: chất liệu, công dụng, độ bền, tiện lợi, hiệu quả, thiết kế, công nghệ...). TUYỆT ĐỐI không nói chung chung kiểu "chất lượng tốt", "rất đẹp" mà không giải thích vì sao — phải gắn với LỢI ÍCH thực tế người dùng nhận được.
-4. Văn phong: nhiệt huyết, gần gũi, tự nhiên như đang nói trực tiếp với khách xem livestream, có thể dùng cách so sánh để làm nổi bật "hời" (so với giá, so với sản phẩm cùng loại).
-5. Câu cuối: lời kêu gọi hành động (CTA) mạnh mẽ, tạo cảm giác cấp bách/khan hiếm hợp lý để thúc đẩy chốt đơn ngay (không nói dối, không cam kết sai sự thật).
-6. Mỗi câu dài khoảng 15-25 từ, dễ đọc thành lời, phù hợp để lồng giọng đọc AI (text-to-speech).
-7. CHỈ trả về đúng {num_lines} dòng kịch bản, KHÔNG thêm lời dẫn, giải thích, tiêu đề hay bất kỳ nội dung nào khác."""
+1. Viết đúng {num_lines} câu thoại, mỗi câu MỘT dòng riêng biệt, không đánh số, không markdown.
+2. Hãy chèn các EMOJI sinh động, phù hợp xu hướng giới trẻ (ví dụ: 🔥, ✨, 😍, 🛒, 💯) vào mỗi câu để làm kịch bản hấp dẫn hơn.
+3. Câu 1: chào hỏi + giới thiệu sản phẩm sao cho gây chú ý ngay lập tức, đúng chất mở đầu video bán hàng.
+4. Các câu ở giữa: PHẢI nêu rõ ít nhất 2-3 ƯU ĐIỂM/TÍNH NĂNG CỤ THỂ của sản phẩm (suy luận hợp lý dựa trên tên và loại sản phẩm, ví dụ: chất liệu, công dụng, độ bền, tiện lợi, hiệu quả, thiết kế, công nghệ...). TUYỆT ĐỐI không nói chung chung kiểu "chất lượng tốt", "rất đẹp" mà không giải thích vì sao — phải gắn với LỢI ÍCH thực tế người dùng nhận được.
+5. Văn phong: nhiệt huyết, gần gũi, tự nhiên như đang nói trực tiếp với khách xem livestream, có thể dùng cách so sánh để làm nổi bật "hời" (so với giá, so với sản phẩm cùng loại).
+6. Câu cuối: lời kêu gọi hành động (CTA) mạnh mẽ, tạo cảm giác cấp bách/khan hiếm hợp lý để thúc đẩy chốt đơn ngay (không nói dối, không cam kết sai sự thật).
+7. Mỗi câu dài khoảng 15-25 từ, dễ đọc thành lời, phù hợp để lồng giọng đọc AI (text-to-speech).
+8. CHỈ trả về đúng {num_lines} dòng kịch bản, KHÔNG thêm lời dẫn, giải thích, tiêu đề hay bất kỳ nội dung nào khác."""
 
         response = client.models.generate_content(
             model=model,
@@ -169,7 +150,6 @@ YÊU CẦU BẮT BUỘC:
         if len(lines) == 0:
             raise ValueError("AI không trả về nội dung hợp lệ.")
 
-        # Đảm bảo đúng số dòng yêu cầu (cắt bớt nếu dư, giữ nguyên nếu thiếu)
         if len(lines) > num_lines:
             lines = lines[:num_lines]
 
@@ -182,51 +162,29 @@ YÊU CẦU BẮT BUỘC:
 async def text_to_speech(text, out_path):
     """Tạo giọng đọc AI thuyết minh bằng edge-tts"""
     import edge_tts
-    communicate = edge_tts.Communicate(text, voice="vi-VN-HoaiMyNeural", rate="+3%")
+    # Loại bỏ emoji trước khi chuyển sang giọng nói để tránh lỗi phát âm ký tự lạ
+    clean_text = "".join(c for c in text if c.isalnum() or c.isspace() or c in ".,!?-_:")
+    communicate = edge_tts.Communicate(clean_text, voice="vi-VN-HoaiMyNeural", rate="+3%")
     await communicate.save(out_path)
 
-def create_slide_video(image_path, audio_path, output_video, text, font_size=32):
-    """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio + chữ đè lên (Đã sửa lỗi cú pháp FFmpeg)"""
-    # Lấy thời lượng chính xác của file audio
+def create_slide_video(image_path, audio_path, output_video):
+    """Dựng một đoạn video ngắn từ 1 ảnh + 1 file audio. Đã bỏ hoàn toàn phần text vẽ đè phụ đề"""
     probe_cmd = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_path
     ]
     duration = float(subprocess.check_output(probe_cmd).strip())
     
-    # Định dạng văn bản xuống dòng để vừa khung dọc
-    wrapped_text = ""
-    words = text.split()
-    temp_line = ""
-    for word in words:
-        if len(temp_line + " " + word) < 28:
-            temp_line += " " + word if temp_line else word
-        else:
-            wrapped_text += temp_line + "\n"
-            temp_line = word
-    wrapped_text += temp_line
-    
-    # Xử lý ký tự đặc biệt dấu nháy và xuống dòng để không làm hỏng filter của ffmpeg
-    wrapped_text = wrapped_text.replace("'", "").replace(":", "\\:")
-    
-    font_path = get_system_font()
     img_clean = image_path.replace("\\", "/")
     aud_clean = audio_path.replace("\\", "/")
     out_clean = output_video.replace("\\", "/")
     
-    # SỬA LỖI TẠI ĐÂY: Tạo bộ lọc drawtext chuẩn xác, nối bằng dấu hai chấm thay vì lặp lại drawtext=
-    if font_path:
-        font_clean = font_path.replace("\\", "/").replace(":", "\\:")
-        drawtext_filter = f"drawtext=fontfile='{font_clean}':text='{wrapped_text}':fontcolor=white:fontsize={font_size}:box=1:boxcolor=black@0.6:boxborderw=15:x=(w-text_w)/2:y=h-350"
-    else:
-        drawtext_filter = f"drawtext=text='{wrapped_text}':fontcolor=white:fontsize={font_size}:box=1:boxcolor=black@0.6:boxborderw=15:x=(w-text_w)/2:y=h-350"
-
-    # Render video
+    # Render video sạch không chứa drawtext
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", img_clean,
         "-i", aud_clean,
-        "-vf", f"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,{drawtext_filter}",
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
         "-c:v", "libx264", "-preset", "ultrafast", "-t", str(duration), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest",
         out_clean
@@ -299,7 +257,7 @@ if product_title:
     col_ai1, col_ai2 = st.columns([3, 1])
     with col_ai1:
         use_ai_script = st.checkbox(
-            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (nêu rõ ưu điểm sản phẩm)",
+            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (có chèn emoji)",
             value=True,
             key="use_ai_checkbox"
         )
@@ -310,10 +268,10 @@ if product_title:
 
     if use_ai_script:
         if ai_cache_key not in st.session_state or regenerate_ai:
-            with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng siêu thuyết phục..."):
+            with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng sinh động..."):
                 st.session_state[ai_cache_key] = generate_review_script_ai(
                     product_title,
-                    api_key=gemini_api_key,
+                    api_key=st.session_state["saved_gemini_api_key"],
                     model=ai_model,
                     num_lines=num_script_lines
                 )
@@ -350,7 +308,7 @@ if product_title:
                     loop = asyncio.get_event_loop()
                     loop.run_until_complete(text_to_speech(text, audio_path))
                 
-                create_slide_video(img_path, audio_path, clip_path, text)
+                create_slide_video(img_path, audio_path, clip_path)
                 video_clips.append(clip_path)
                 
             progress_bar.progress(50)
