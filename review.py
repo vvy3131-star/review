@@ -21,24 +21,46 @@ st.markdown("""
 st.title("🛍️ Tạo Video Review Sản Phẩm Tự Động")
 st.write("Nhập link sản phẩm hoặc tự upload hình ảnh để tạo video review ngắn (dạng dọc 16:9 TikTok/Shorts) kèm giọng thuyết minh AI cực chất.")
 
-# Khởi tạo session_state cho API Key nếu chưa có
+# --- NÂNG CẤP CƠ CHẾ LƯU TRỮ API KEY LÂU DÀI ---
+KEY_FILE = ".gemini_api_key"
+
+def load_saved_api_key():
+    """Đọc API Key từ file lưu trữ vật lý hoặc biến môi trường"""
+    if os.path.exists(KEY_FILE):
+        try:
+            with open(KEY_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except:
+            pass
+    return os.environ.get("GEMINI_API_KEY", "")
+
+def save_api_key(api_key):
+    """Lưu API Key vào file cấu hình vật lý để dùng cho các lần chạy sau"""
+    try:
+        with open(KEY_FILE, "w", encoding="utf-8") as f:
+            f.write(api_key.strip())
+    except Exception as e:
+        st.sidebar.error(f"Không thể lưu API Key vật lý: {e}")
+
+# Khởi tạo API key trong session_state từ file lưu trữ
 if "saved_gemini_api_key" not in st.session_state:
-    st.session_state["saved_gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
+    st.session_state["saved_gemini_api_key"] = load_saved_api_key()
 
 # --- CẤU HÌNH AI (SIDEBAR) ---
 with st.sidebar:
     st.header("⚙️ Cấu hình AI viết kịch bản")
     
-    # Nhập và lưu API Key vào session_state
+    # Nhập và lưu API Key
     gemini_api_key = st.text_input(
         "Gemini API Key:",
         type="password",
         value=st.session_state["saved_gemini_api_key"],
         help="Lấy API Key tại Google AI Studio (https://aistudio.google.com/). "
-             "Key sẽ được lưu tự động trong phiên làm việc này."
+             "Key sẽ được lưu tự động trên hệ thống cho các lần chạy sau."
     )
     if gemini_api_key != st.session_state["saved_gemini_api_key"]:
         st.session_state["saved_gemini_api_key"] = gemini_api_key
+        save_api_key(gemini_api_key)  # Lưu vật lý ngay khi thay đổi
 
     ai_model = st.selectbox(
         "Model AI:",
@@ -46,7 +68,6 @@ with st.sidebar:
         index=0,
         help="gemini-2.5-flash: Cực kỳ nhanh, phản hồi tức thì và tiết kiệm chi phí. gemini-2.5-pro: Dành cho kịch bản có tính sáng tạo cao hơn."
     )
-    num_script_lines = st.slider("Số câu thoại trong kịch bản:", min_value=3, max_value=7, value=5)
 
 # --- CÁC HÀM XỬ LÝ PHỤ TRỢ ---
 
@@ -98,7 +119,7 @@ def scrape_product_info(url):
         st.warning(f"Không thể tự động cào do cơ chế bảo mật nghiêm ngặt của trang web. Bạn hãy chuyển sang chế độ Nhập Thủ Công bên dưới nhé!")
         return None
 
-def generate_review_script(title, num_lines=5):
+def generate_review_script(title):
     """Tạo kịch bản review mẫu ngắn gọn kèm emoji sinh động (dự phòng khi không dùng AI hoặc AI lỗi)"""
     clean_title = title[:50] + "..." if len(title) > 50 else title
     script_steps = [
@@ -108,37 +129,36 @@ def generate_review_script(title, num_lines=5):
         "🤑 Trong tầm giá này thì đây chắc chắn là một sự lựa chọn cực kỳ hời cho các bạn.",
         "🛒 Chi tiết thông tin sản phẩm mình để ở phần mô tả, nhanh tay bấm vào giỏ hàng sở hữu ngay nha!"
     ]
-    return script_steps[:num_lines] if num_lines <= len(script_steps) else script_steps
+    return script_steps
 
-def generate_review_script_ai(title, api_key, model="gemini-2.5-flash", num_lines=5):
-    """Dùng Google Gemini API để viết kịch bản thuyết minh video review hấp dẫn CÓ CHỨA EMOJI"""
+def generate_review_script_ai(title, api_key, model="gemini-2.5-flash"):
+    """Dùng Google Gemini API để viết kịch bản thuyết minh video review hấp dẫn CÓ CHỨA EMOJI, thỏa sức sáng tạo không giới hạn dòng"""
     if not api_key:
         st.warning("⚠️ Chưa nhập Gemini API Key ở thanh bên trái, đang dùng kịch bản mẫu có sẵn.")
-        return generate_review_script(title, num_lines)
+        return generate_review_script(title)
 
     try:
         from google import genai
     except ImportError:
         st.warning("⚠️ Chưa cài thư viện `google-genai` (chạy: pip install google-genai). Đang dùng kịch bản mẫu có sẵn.")
-        return generate_review_script(title, num_lines)
+        return generate_review_script(title)
 
     try:
         client = genai.Client(api_key=api_key)
 
-        prompt = f"""Bạn là một chuyên gia bán hàng livestream TikTok Shop / Shopee cực kỳ có duyên, giàu kinh nghiệm chốt đơn.
+        prompt = f"""Bạn là một chuyên gia sáng tạo nội dung, reviewer và chiến thần livestream bán hàng TikTok Shop / Shopee cực kỳ cuốn hút, có tài giữ chân người xem và chốt đơn thần tốc.
 
-Hãy viết kịch bản thuyết minh cho video review ngắn (dạng dọc, TikTok/Shorts) cho sản phẩm sau:
+Hãy thỏa sức sáng tạo viết một kịch bản review video ngắn (dạng dọc, TikTok/Shorts/Reels) cho sản phẩm sau:
 "{title}"
 
 YÊU CẦU BẮT BUỘC:
-1. Viết đúng {num_lines} câu thoại, mỗi câu MỘT dòng riêng biệt, không đánh số, không markdown.
-2. Hãy chèn các EMOJI sinh động, phù hợp xu hướng giới trẻ (ví dụ: 🔥, ✨, 😍, 🛒, 💯) vào mỗi câu để làm kịch bản hấp dẫn hơn.
-3. Câu 1: chào hỏi + giới thiệu sản phẩm sao cho gây chú ý ngay lập tức, đúng chất mở đầu video bán hàng.
-4. Các câu ở giữa: PHẢI nêu rõ ít nhất 2-3 ƯU ĐIỂM/TÍNH NĂNG CỤ THỂ của sản phẩm (suy luận hợp lý dựa trên tên và loại sản phẩm, ví dụ: chất liệu, công dụng, độ bền, tiện lợi, hiệu quả, thiết kế, công nghệ...). TUYỆT ĐỐI không nói chung chung kiểu "chất lượng tốt", "rất đẹp" mà không giải thích vì sao — phải gắn với LỢI ÍCH thực tế người dùng nhận được.
-5. Văn phong: nhiệt huyết, gần gũi, tự nhiên như đang nói trực tiếp với khách xem livestream, có thể dùng cách so sánh để làm nổi bật "hời" (so với giá, so với sản phẩm cùng loại).
-6. Câu cuối: lời kêu gọi hành động (CTA) mạnh mẽ, tạo cảm giác cấp bách/khan hiếm hợp lý để thúc đẩy chốt đơn ngay (không nói dối, không cam kết sai sự thật).
-7. Mỗi câu dài khoảng 15-25 từ, dễ đọc thành lời, phù hợp để lồng giọng đọc AI (text-to-speech).
-8. CHỈ trả về đúng {num_lines} dòng kịch bản, KHÔNG thêm lời dẫn, giải thích, tiêu đề hay bất kỳ nội dung nào khác."""
+1. Bạn không bị giới hạn số lượng câu hay độ dài. Hãy tự thiết kế số lượng phân đoạn hợp lý nhất để truyền tải trọn vẹn điểm bán hàng độc nhất (USP) của sản phẩm. Mỗi phân đoạn viết trên MỘT dòng riêng biệt, không đánh số, không dùng ký tự markdown hay gạch đầu dòng.
+2. Ngôn từ cực kỳ bùng nổ, đánh trúng tâm lý, tạo sự tò mò ngay từ 3 giây đầu tiên (Hook cực mạnh).
+3. Chèn các EMOJI sinh động, trendy (ví dụ: 🔥, ✨, 😍, 🛒, 💯, 🤫, 😱) xuyên suốt kịch bản để thu hút mắt người xem.
+4. Nêu bật chi tiết các ưu điểm, công dụng, chất liệu, trải nghiệm thực tế vượt trội của sản phẩm này so với thị trường. Làm cho khách hàng cảm thấy "Không mua ngay là tiếc hùi hụi".
+5. Kết thúc bằng một lời kêu gọi hành động (CTA) cực kỳ kích thích chốt đơn, tạo sự khẩn trương (ví dụ: số lượng có hạn, ưu đãi chỉ có trong hôm nay).
+6. Mỗi dòng kịch bản dài vừa phải (khoảng 15-25 từ), nhịp điệu tự nhiên, dễ đọc thành lời để lồng giọng đọc AI (text-to-speech) mượt mà.
+7. CHỈ trả về các dòng kịch bản trực tiếp, TUYỆT ĐỐI không kèm lời dẫn, không ghi tiêu đề, không giải thích dài dòng."""
 
         response = client.models.generate_content(
             model=model,
@@ -151,14 +171,11 @@ YÊU CẦU BẮT BUỘC:
         if len(lines) == 0:
             raise ValueError("AI không trả về nội dung hợp lệ.")
 
-        if len(lines) > num_lines:
-            lines = lines[:num_lines]
-
         return lines
 
     except Exception as e:
         st.warning(f"⚠️ Không thể tạo kịch bản bằng AI ({e}). Đang dùng kịch bản mẫu có sẵn.")
-        return generate_review_script(title, num_lines)
+        return generate_review_script(title)
 
 async def text_to_speech(text, out_path):
     """Tạo giọng đọc AI thuyết minh bằng edge-tts"""
@@ -196,12 +213,7 @@ def create_slide_video(image_path, audio_path, script_text, title, output_video)
     # Đường dẫn font hệ thống mặc định phù hợp cho cả Windows và Linux
     font_path = "C\\\\:/Windows/Fonts/Arial.ttf" if os.name == 'nt' else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-    # --- ĐOẠN MÃ NÂNG CẤP BỘ LỌC FFMPEG TẠO KHUNG ĐỒNG BỘ MÀU HỒNG ---
-    # 1. Thu gọn hình ảnh nằm gọn ở giữa khung đứng 1080x1920
-    # 2. Tạo phần khung Header phía trên và Footer phía dưới đều phủ ĐỒNG BỘ NỀN MÀU HỒNG (#FFF5F5)
-    # 3. Vẽ 3 đường vạch highlight màu hồng sẫm (#D96B78) ngăn cách bố cục sang trọng
-    # 4. In trực tiếp Tên sản phẩm do người dùng nhập lên khung trên
-    # 5. Loại bỏ hoàn toàn logo và tên thương hiệu cũ ở phần dưới
+    # --- BỘ LỌC FFMPEG TẠO KHUNG ĐỒNG BỘ MÀU HỒNG ---
     vf_filter = (
         f"scale=1080:1200:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
         f"drawbox=y=0:w=1080:h=400:color=#FFF5F5:t=fill," # Khung trên màu hồng nhạt
@@ -292,31 +304,30 @@ if product_title:
     col_ai1, col_ai2 = st.columns([3, 1])
     with col_ai1:
         use_ai_script = st.checkbox(
-            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (có chèn emoji)",
+            "✨ Dùng AI viết kịch bản bán hàng siêu thuyết phục (không giới hạn câu thoại, tự do sáng tạo)",
             value=True,
             key="use_ai_checkbox"
         )
     with col_ai2:
         regenerate_ai = st.button("🔄 Viết lại bằng AI", key="regen_ai_btn", use_container_width=True)
 
-    ai_cache_key = f"ai_script::{product_title}::{num_script_lines}::{ai_model}"
+    ai_cache_key = f"ai_script_v2::{product_title}::{ai_model}"
 
     if use_ai_script:
         if ai_cache_key not in st.session_state or regenerate_ai:
-            with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng sinh động..."):
+            with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng hấp dẫn..."):
                 st.session_state[ai_cache_key] = generate_review_script_ai(
                     product_title,
                     api_key=st.session_state["saved_gemini_api_key"],
-                    model=ai_model,
-                    num_lines=num_script_lines
+                    model=ai_model
                 )
         scripts = st.session_state[ai_cache_key]
     else:
-        scripts = generate_review_script(product_title, num_script_lines)
+        scripts = generate_review_script(product_title)
 
     edited_scripts = []
     for idx, step in enumerate(scripts):
-        edited_txt = st.text_input(f"Câu thoại {idx + 1}:", value=step, key=f"script_input_{idx}_{ai_cache_key}")
+        edited_txt = st.text_input(f"Phân đoạn thoại {idx + 1}:", value=step, key=f"script_input_{idx}_{ai_cache_key}")
         edited_scripts.append(edited_txt)
 
     st.write("---")
