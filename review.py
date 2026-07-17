@@ -180,28 +180,40 @@ def create_slide_video(image_path, audio_path, script_text, title, output_video)
     aud_clean = audio_path.replace("\\", "/")
     out_clean = output_video.replace("\\", "/")
     
-    # Định dạng lại chuỗi văn bản an toàn cho ffmpeg (xóa các ký tự gây lỗi compile bộ lọc)
-    safe_title = title.replace(":", "\\:").replace("'", "").replace('"', '')
-    safe_script = script_text.replace(":", "\\:").replace("'", "").replace('"', '')
+    # Loại bỏ các ký tự đặc biệt nguy hiểm làm lỗi lệnh bộ lọc ffmpeg
+    safe_title = re.sub(r"[':\"\\\(\)\[\]\{\}]", "", title).strip().upper()
+    
+    # Xử lý cắt dòng tiêu đề nếu quá dài để hiển thị đẹp trên 2 dòng
+    if len(safe_title) > 22:
+        words = safe_title.split()
+        mid = len(words) // 2
+        title_line1 = " ".join(words[:mid])
+        title_line2 = " ".join(words[mid:])
+    else:
+        title_line1 = safe_title
+        title_line2 = ""
 
-    # Đường dẫn font hệ thống mặc định (Có thể đổi sang Arial.ttf hoặc NotoSans nếu chạy local)
+    # Đường dẫn font hệ thống mặc định phù hợp cho cả Windows và Linux
     font_path = "C\\\\:/Windows/Fonts/Arial.ttf" if os.name == 'nt' else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-    # --- ĐOẠN MÃ NÂNG CẤP BỘ LỌC FFMPEG TẠO KHUNG ĐẸP MẮT ---
-    # 1. Scale hình ảnh về vừa khung hình vuông ở giữa video đứng 1080x1920
-    # 2. Tạo phần khung Header trắng hồng ở trên, vẽ 2 thanh line màu hồng đậm
-    # 3. Điền chữ "SỬA RỬA MẶT QUỐC DÂN" (Dòng 1 tiêu đề cố định) và "PHÙ HỢP MỌI LOẠI DA" (Dòng 2 màu hồng)
-    # 4. Phần Footer dưới: Vẽ vòng tròn giả làm Avatar và text tên thương hiệu "Bim Beauty 🌷"
+    # --- ĐOẠN MÃ NÂNG CẤP BỘ LỌC FFMPEG TẠO KHUNG ĐỒNG BỘ MÀU HỒNG ---
+    # 1. Thu gọn hình ảnh nằm gọn ở giữa khung đứng 1080x1920
+    # 2. Tạo phần khung Header phía trên và Footer phía dưới đều phủ ĐỒNG BỘ NỀN MÀU HỒNG (#FFF5F5)
+    # 3. Vẽ 3 đường vạch highlight màu hồng sẫm (#D96B78) ngăn cách bố cục sang trọng
+    # 4. In trực tiếp Tên sản phẩm do người dùng nhập lên khung trên
+    # 5. Loại bỏ hoàn toàn logo và tên thương hiệu cũ ở phần dưới
     vf_filter = (
         f"scale=1080:1200:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
-        f"drawbox=y=0:w=1080:h=400:color=#FFF5F5:t=fill," # Nền Header hồng nhạt
-        f"drawbox=y=130:w=1080:h=8:color=#D96B78:t=fill," # Vạch viền Header trên
-        f"drawbox=y=392:w=1080:h=8:color=#D96B78:t=fill," # Vạch viền Header dưới
-        f"drawtext=fontfile='{font_path}':text='SỬA RỬA MẶT QUỐC DÂN':fontcolor=black:fontsize=52:x=(w-tw)/2:y=200:box=1:boxcolor=#FFF5F5,"
-        f"drawtext=fontfile='{font_path}':text='PHÙ HỢP MỌI LOẠI DA':fontcolor=#D96B78:fontsize=46:x=(w-tw)/2:y=290:box=1:boxcolor=#FFF5F5,"
-        f"drawbox=y=1750:w=1080:h=170:color=#EAEAEA@0.8:t=fill," # Thanh mờ Footer dưới
-        f"drawtext=fontfile='{font_path}':text='Bim Beauty \\xF0\\x9F\\x8C\\xB7':fontcolor=white:fontsize=55:x=260:y=1800" # Tên kênh & Icon hoa tulip
+        f"drawbox=y=0:w=1080:h=400:color=#FFF5F5:t=fill," # Khung trên màu hồng nhạt
+        f"drawbox=y=1520:w=1080:h=400:color=#FFF5F5:t=fill," # Khung dưới màu hồng nhạt đồng bộ
+        f"drawbox=y=130:w=1080:h=8:color=#D96B78:t=fill," # Vạch viền trang trí trên
+        f"drawbox=y=392:w=1080:h=8:color=#D96B78:t=fill," # Vạch chia khung trên
+        f"drawbox=y=1520:w=1080:h=8:color=#D96B78:t=fill," # Vạch chia khung dưới
+        f"drawtext=fontfile='{font_path}':text='{title_line1}':fontcolor=black:fontsize=48:x=(w-tw)/2:y=210:box=1:boxcolor=#FFF5F5"
     )
+    
+    if title_line2:
+        vf_filter += f",drawtext=fontfile='{font_path}':text='{title_line2}':fontcolor=#D96B78:fontsize=42:x=(w-tw)/2:y=295:box=1:boxcolor=#FFF5F5"
     
     cmd = [
         "ffmpeg", "-y",
@@ -331,7 +343,6 @@ if product_title:
                     loop = asyncio.get_event_loop()
                     loop.run_until_complete(text_to_speech(text, audio_path))
                 
-                # Gọi hàm dựng video tích hợp frame hình ảnh mới nâng cấp
                 create_slide_video(img_path, audio_path, text, product_title, clip_path)
                 video_clips.append(clip_path)
                 
