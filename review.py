@@ -23,18 +23,18 @@ st.write("Nhập link sản phẩm hoặc tự upload hình ảnh để tạo vi
 # --- CẤU HÌNH AI (SIDEBAR) ---
 with st.sidebar:
     st.header("⚙️ Cấu hình AI viết kịch bản")
-    anthropic_api_key = st.text_input(
-        "Anthropic API Key (Claude):",
+    gemini_api_key = st.text_input(
+        "Gemini API Key:",
         type="password",
-        value=os.environ.get("ANTHROPIC_API_KEY", ""),
-        help="Lấy API Key miễn phí dùng thử tại https://console.anthropic.com/settings/keys. "
+        value=os.environ.get("GEMINI_API_KEY", ""),
+        help="Lấy API Key tại Google AI Studio (https://aistudio.google.com/). "
              "Dùng để AI tự viết kịch bản bán hàng siêu thuyết phục thay vì mẫu có sẵn."
     )
     ai_model = st.selectbox(
         "Model AI:",
-        options=["claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-opus-4-8"],
+        options=["gemini-2.5-flash", "gemini-2.5-pro"],
         index=0,
-        help="Sonnet 5: cân bằng chất lượng/tốc độ. Haiku: nhanh, rẻ. Opus: chất lượng cao nhất."
+        help="gemini-2.5-flash: Cực kỳ nhanh, phản hồi tức thì và tiết kiệm chi phí. gemini-2.5-pro: Dành cho kịch bản có tính sáng tạo cao hơn."
     )
     num_script_lines = st.slider("Số câu thoại trong kịch bản:", min_value=3, max_value=7, value=5)
 
@@ -125,25 +125,24 @@ def generate_review_script(title, num_lines=5):
     ]
     return script_steps[:num_lines] if num_lines <= len(script_steps) else script_steps
 
-def generate_review_script_ai(title, api_key, model="claude-sonnet-5", num_lines=5):
+def generate_review_script_ai(title, api_key, model="gemini-2.5-flash", num_lines=5):
     """
-    Dùng AI (Claude) để viết kịch bản thuyết minh video review CỰC KỲ THUYẾT PHỤC,
-    theo phong cách người bán hàng chuyên nghiệp: chỉ rõ ưu điểm cụ thể của sản phẩm,
-    tạo cảm giác hấp dẫn/khan hiếm và chốt đơn mạnh mẽ.
-    Trả về danh sách các câu thoại (list[str]). Nếu lỗi -> fallback về kịch bản mẫu.
+    Dùng Google Gemini API để viết kịch bản thuyết minh video review CỰC KỲ THUYẾT PHỤC.
+    Yêu cầu cài đặt thư viện mới nhất: pip install google-genai
     """
     if not api_key:
-        st.warning("⚠️ Chưa nhập Anthropic API Key ở thanh bên trái, đang dùng kịch bản mẫu có sẵn.")
+        st.warning("⚠️ Chưa nhập Gemini API Key ở thanh bên trái, đang dùng kịch bản mẫu có sẵn.")
         return generate_review_script(title, num_lines)
 
     try:
-        import anthropic
+        from google import genai
     except ImportError:
-        st.warning("⚠️ Chưa cài thư viện `anthropic` (chạy: pip install anthropic). Đang dùng kịch bản mẫu có sẵn.")
+        st.warning("⚠️ Chưa cài thư viện `google-genai` (chạy: pip install google-genai). Đang dùng kịch bản mẫu có sẵn.")
         return generate_review_script(title, num_lines)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        # Khởi tạo Client sử dụng thư viện SDK google-genai mới nhất
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""Bạn là một chuyên gia bán hàng livestream TikTok Shop / Shopee cực kỳ có duyên, giàu kinh nghiệm chốt đơn.
 
@@ -159,16 +158,12 @@ YÊU CẦU BẮT BUỘC:
 6. Mỗi câu dài khoảng 15-25 từ, dễ đọc thành lời, phù hợp để lồng giọng đọc AI (text-to-speech).
 7. CHỈ trả về đúng {num_lines} dòng kịch bản, KHÔNG thêm lời dẫn, giải thích, tiêu đề hay bất kỳ nội dung nào khác."""
 
-        message = client.messages.create(
+        response = client.models.generate_content(
             model=model,
-            max_tokens=700,
-            messages=[{"role": "user", "content": prompt}]
+            contents=prompt,
         )
 
-        raw_text = "".join(
-            block.text for block in message.content if getattr(block, "type", "") == "text"
-        ).strip()
-
+        raw_text = response.text.strip()
         lines = [l.strip(" -•\t") for l in raw_text.split("\n") if l.strip()]
 
         if len(lines) == 0:
@@ -318,7 +313,7 @@ if product_title:
             with st.spinner("🤖 AI đang phân tích sản phẩm và viết kịch bản bán hàng siêu thuyết phục..."):
                 st.session_state[ai_cache_key] = generate_review_script_ai(
                     product_title,
-                    api_key=anthropic_api_key,
+                    api_key=gemini_api_key,
                     model=ai_model,
                     num_lines=num_script_lines
                 )
